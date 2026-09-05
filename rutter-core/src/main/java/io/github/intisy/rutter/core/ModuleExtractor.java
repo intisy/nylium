@@ -1,0 +1,99 @@
+package io.github.intisy.rutter.core;
+
+import io.github.intisy.rutter.api.RutterException;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+
+public final class ModuleExtractor {
+
+    private final Path cacheDirectory;
+
+    public ModuleExtractor(Path cacheDirectory) {
+        this.cacheDirectory = cacheDirectory;
+    }
+
+    public Path extract(ClassLoader source, ModuleDescriptor module) {
+        byte[] bytes = read(source, module.path());
+        Path target = cacheDirectory.resolve(fileName(module, bytes));
+        if (Files.isRegularFile(target)) {
+            return target;
+        }
+        write(bytes, target);
+        return target;
+    }
+
+    private static byte[] read(ClassLoader source, String path) {
+        try (InputStream stream = source.getResourceAsStream(path)) {
+            if (stream == null) {
+                throw new RutterException("The Rutter manifest names module '" + path
+                        + "' but no such entry exists in the jar.");
+            }
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int read;
+            while ((read = stream.read(chunk)) >= 0) {
+                buffer.write(chunk, 0, read);
+            }
+            return buffer.toByteArray();
+        } catch (IOException e) {
+            throw new RutterException("Could not read module '" + path + "' from the jar", e);
+        }
+    }
+
+    private static String fileName(ModuleDescriptor module, byte[] bytes) {
+        String base = module.path();
+        int slash = base.lastIndexOf('/');
+        if (slash >= 0) {
+            base = base.substring(slash + 1);
+        }
+        if (base.endsWith(".jar")) {
+            base = base.substring(0, base.length() - ".jar".length());
+        }
+        return base + "-" + sha256(bytes).substring(0, 16) + ".jar";
+    }
+
+    private static String sha256(byte[] bytes) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
+            StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                hex.append(Character.forDigit((b >> 4) & 0xf, 16));
+                hex.append(Character.forDigit(b & 0xf, 16));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RutterException("SHA-256 is unavailable on this JVM", e);
+        }
+    }
+
+    private void write(byte[] bytes, Path target) {
+        try {
+            Files.createDirectories(cacheDirectory);
+            Path temporary = Files.createTempFile(cacheDirectory, "rutter-", ".jar.part");
+            try {
+                Files.write(temporary, bytes);
+                try {
+                    Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException | java.nio.file.FileAlreadyExistsException | java.nio.file.AccessDeniedException e) {
+                    if (Files.isRegularFile(target)) {
+                        Files.deleteIfExists(temporary);
+                    } else {
+                        Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+            } finally {
+                Files.deleteIfExists(temporary);
+            }
+        } catch (IOException e) {
+            throw new RutterException("Could not write module to the Rutter cache at " + target, e);
+        }
+    }
+}
