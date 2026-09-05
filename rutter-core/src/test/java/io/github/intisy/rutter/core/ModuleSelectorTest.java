@@ -120,4 +120,46 @@ class ModuleSelectorTest {
         assertTrue(message.contains("modules/a-1.21.10.jar"), message);
         assertTrue(message.contains("platform"), message);
     }
+
+    @Test
+    void rejectionMessageNamesVersionRangeAndEnvironmentMismatches() {
+        ModuleSelector selector = selector(
+                "module.0.path=modules/wrong-version.jar\n"
+                        + "module.0.platforms=FABRIC\n"
+                        + "module.0.minecraft=[1.20,1.21)\n"
+                        + "module.0.environment=CLIENT\n"
+                        + "module.1.path=modules/wrong-env.jar\n"
+                        + "module.1.platforms=FABRIC\n"
+                        + "module.1.minecraft=1.21.11\n"
+                        + "module.1.environment=SERVER\n");
+
+        NoCompatibleModuleException thrown = assertThrows(NoCompatibleModuleException.class,
+                () -> selector.select(PlatformId.FABRIC, McVersion.parse("1.21.11"), Environment.CLIENT));
+
+        String message = thrown.getMessage();
+        assertTrue(message.contains("[1.20,1.21)"), "message should name the declared version range");
+        assertTrue(message.contains("1.21.11"), "message should name the requested version");
+        assertTrue(message.contains("excludes"), "version message should use 'excludes'");
+        assertTrue(message.contains("SERVER"), "message should name the declared environment");
+        assertTrue(message.contains("wrong-version.jar"), "message should list version-rejected candidate");
+        assertTrue(message.contains("wrong-env.jar"), "message should list environment-rejected candidate");
+    }
+
+    @Test
+    void manifestOrderBreaksTiesBetweenIdenticalCandidates() {
+        ModuleSelector selector = selector(
+                "module.0.path=modules/first.jar\n"
+                        + "module.0.platforms=FABRIC\n"
+                        + "module.0.minecraft=1.21.11\n"
+                        + "module.0.specificity=5\n"
+                        + "module.0.priority=10\n"
+                        + "module.1.path=modules/second.jar\n"
+                        + "module.1.platforms=FABRIC\n"
+                        + "module.1.minecraft=1.21.11\n"
+                        + "module.1.specificity=5\n"
+                        + "module.1.priority=10\n");
+
+        assertEquals("modules/first.jar",
+                selector.select(PlatformId.FABRIC, McVersion.parse("1.21.11"), Environment.CLIENT).path());
+    }
 }
