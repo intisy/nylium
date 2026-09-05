@@ -57,16 +57,28 @@ modules carry those mixins), dispatched by the same mechanism it offers consumer
 - **No downloading or auto-update.** Everything ships inside the consumer's jar.
 - **Not a mod.** No gameplay content.
 
-## The four platform backends
+## The platform backends
 
-The 1.7-to-26.2 span is not thirty special cases. It is four bootstrap families:
+The 1.7-to-26.2 span is not thirty special cases. It is a handful of bootstrap families:
 
-| Backend | Covers |
-| --- | --- |
-| LaunchWrapper | 1.7 - 1.12 |
-| ModLauncher 8 | 1.13 - 1.16 |
-| ModLauncher 9+ | 1.17+, and NeoForge from 1.20.4 on the same infrastructure |
-| Fabric | 1.14+, and Quilt |
+| Backend | Covers | Status |
+| --- | --- | --- |
+| LaunchWrapper | Forge 1.7 - 1.12 | SP-1 |
+| ModLauncher 8 | Forge 1.13 - 1.16 | SP-1 |
+| ModLauncher 9+ | Forge 1.17+ | SP-1 |
+| Fabric | 1.14+, and Quilt | SP-1 |
+| NeoForge | 1.20.4+ | SP-1b |
+
+**NeoForge is its own family. Corrected 2026-09-06.** This table previously read "ModLauncher 9+:
+1.17+, and NeoForge from 1.20.4 on the same infrastructure". SP-1's ModLauncher 9 spike disproved
+that: NeoForge 21.11.45 ships **zero** `cpw/mods/` classes across its 71 jars, and a registered
+`ITransformationService` is never discovered there at all. NeoForge has moved off ModLauncher
+entirely and exposes its own `IModFileCandidateLocator` SPI, whose lifecycle timing is so far
+uncharacterised. It therefore needs a fifth bootstrap, built in SP-1b behind its own spike, rather
+than being assumed into the ModLauncher 9 backend.
+
+That correction is the clearest argument for the spike-first ordering: the assumption was load
+bearing, wrong, and would not have surfaced until a NeoForge smoke test failed late in SP-1.
 
 ## Sub-projects
 
@@ -76,10 +88,14 @@ implementation cycle.
 | | Sub-project | Delivers | Depends on |
 | --- | --- | --- | --- |
 | SP-1 | **Rutter kernel** | Dispatch, four bootstrap backends, manifest and module selection, version probe chain, API purity check, CI. A test mod boots on all four platforms. | - |
+| SP-1b | **NeoForge backend** | A fifth bootstrap over NeoForge's `IModFileCandidateLocator`, opening with a spike of its lifecycle timing. Split out of SP-1 once the ModLauncher 9 spike proved NeoForge shares no infrastructure with Forge. | SP-1 |
 | SP-2 | **Gradle packaging plugin** | Turnkey `rutter { }` block assembling the universal jar: modules, manifest, multi-loader metadata. | SP-1 |
-| SP-3 | **Baritone universal jar** | One Baritone file for all versions and loaders, with the fork's 8 custom features intact. | SP-1, SP-2 |
-| SP-4 | **Unified loader API** | The enumerated complete loader capability surface across all four backends. | SP-1 |
+| SP-3 | **Baritone universal jar** | One Baritone file for all versions and loaders, with the fork's 8 custom features intact. | SP-1, SP-1b, SP-2 |
+| SP-4 | **Unified loader API** | The enumerated complete loader capability surface across every backend. | SP-1 |
 | SP-5 | **Minecraft facade** | Injected interfaces and primitive hot paths, version-stable, grown per version. | SP-1 |
+
+SP-3 gains a dependency on SP-1b because Baritone ships NeoForge jars today, so a genuinely
+universal Baritone jar cannot cover NeoForge until that backend exists.
 
 **Ordering rationale:** SP-3 delivers the single Baritone jar before the two largest
 sub-projects start. SP-4 and SP-5 then progressively shrink how much per-version code

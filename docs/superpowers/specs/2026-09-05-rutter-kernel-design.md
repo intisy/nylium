@@ -71,12 +71,38 @@ public interface Platform {
     void addToClasspath(Path jar);
     void registerMixinConfig(String name);
     Optional<String> nativeVersionProbe();
+
+    default void whenModuleLoadable(Runnable activation) {
+        activation.run();
+    }
+
+    default ClassLoader moduleClassLoader(ClassLoader source) {
+        return source;
+    }
 }
 ```
 
 `rutter-core` depends on nothing else about a platform. Keeping this interface small is the
 main design constraint of SP-1: anything that can live in core must live in core, because
 core is written once and each backend is written four times.
+
+**The last two methods exist because of a spike finding, and they carry Java 8 defaults so that
+three of the four backends need no code for them.** On ModLauncher 9+, a module offered into the
+GAME layer during the transformation-service phase is not loadable at any point in that phase:
+plain `Class.forName` never resolves it, and the class becomes reachable only at
+`ILaunchPluginService.initializeLaunch`, through `getLayer(GAME).findLoader(...)`. A kernel that
+classpaths a module and immediately invokes its entrypoint therefore cannot work there.
+
+Rather than split `boot` into two public calls that every backend would have to make in the right
+order (and could silently forget), the kernel wraps activation:
+`platform.whenModuleLoadable(() -> invoke(entrypoint, module, platform.moduleClassLoader(source)))`.
+Fabric, LaunchWrapper and ModLauncher 8 inherit the immediate defaults; ModLauncher 9 overrides
+both, deferring the runnable and returning the GAME layer's loader.
+
+The known limit of this shape: a `Runnable` cannot hand the platform a typed failure. The kernel's
+`invoke` throws `RutterException`, which propagates inline on three backends and at
+`initializeLaunch` on ModLauncher 9. If a platform ever needs to abort a launch with its own error
+type, this becomes a functional interface instead.
 
 ### Version detection
 
@@ -120,12 +146,32 @@ the hash matches, and guards concurrent launches with an atomic rename.
 
 ### Per-backend responsibilities
 
-| Backend | Entry contract | `addToClasspath` | Mixin registration |
-| --- | --- | --- | --- |
-| LaunchWrapper | `ITweaker.injectIntoClassLoader` | `Launch.classLoader.addURL` | after `MixinBootstrap.init()` |
-| ModLauncher 8 | `ITransformationService` via `ServiceLoader` | jars returned from the scanning phase | service init |
-| ModLauncher 9+ | `ITransformationService` plus `SecureJar` via `IModuleLayerManager` | `beginScanning` / `completeScan` resource lists | `IMixinConnector` or service init |
-| Fabric | `PreLaunchEntrypoint` | `FabricLauncherBase.getLauncher().addToClassPath` | `Mixins.addConfiguration` in preLaunch |
+| Backend | Covers | Entry contract | `addToClasspath` | Mixin registration |
+| --- | --- | --- | --- | --- |
+| LaunchWrapper | Forge 1.7 - 1.12 | `ITweaker.injectIntoClassLoader` | `Launch.classLoader.addURL` | after `MixinBootstrap.init()` |
+| ModLauncher 8 | Forge 1.13 - 1.16 | `ITransformationService` via `ServiceLoader` | jars returned from the scanning phase | service init |
+| ModLauncher 9+ | Forge 1.17+ | `ITransformationService` plus `SecureJar` into `Layer.GAME` | `beginScanning` resource list | `Mixins.addConfiguration`, entrypoint deferred to `initializeLaunch` |
+| Fabric | 1.14+, Quilt | `PreLaunchEntrypoint` | `FabricLauncherBase.getLauncher().addToClassPath` | `Mixins.addConfiguration` in preLaunch |
+
+**ModLauncher 9+ covers Forge only, not NeoForge.** The spike found NeoForge 21.11.45 carries no
+ModLauncher at all, so NeoForge is a separate backend deferred to SP-1b. See the program overview's
+backend table.
+
+**Verification status of the ModLauncher 9+ range.** Forge 1.21.x is verified against a real server
+(1.21.11-61.1.5). Forge 1.17 - 1.20.x is source-compatible and confirmed to compile at release 8,
+but was never run, and its `initializeLaunch` carries only a two-argument form, so the backend
+resolves that method reflectively across both arities. That range is declared **unverified** rather
+than supported until someone runs it. Proving it would mean four more server installs for versions
+no consumer needs until SP-3 folds them in, which is not SP-1's job.
+
+Confirmed spike details the backend must copy: the working Maven coordinates are
+`net.minecraftforge:modlauncher:10.2.4` and `net.minecraftforge:securemodules:2.2.24` (not
+`cpw.mods:modlauncher` / `cpw.mods:securejarhandler`, which is what this spec's earlier drafts
+assumed), and compiling them at release 8 requires overriding
+`TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE` to 21 on `configurations.compileClasspath`, because
+ModLauncher 10.x publishes a Java 17 target attribute that Gradle's variant resolution otherwise
+refuses. `Layer.GAME` is the transforming loader and the only layer that works: `PLUGIN` is not
+transforming, and `BOOT` and `SERVICE` silently drop the jar.
 
 **All four bootstraps coexist inside one outer jar.** Each must therefore be inert when its
 platform is absent: a bootstrap is discovered only by its own loader's mechanism, and must
@@ -166,13 +212,18 @@ Three layers, in increasing cost:
 
 Minimum smoke matrix for SP-1 to be done:
 
-| Backend | Minecraft version |
+| Backend | Target |
 | --- | --- |
-| LaunchWrapper | 1.7.10 |
-| ModLauncher 8 | 1.16.5 |
-| ModLauncher 9+ | 1.21.11 |
+| LaunchWrapper | Forge 1.7.10 |
+| ModLauncher 8 | Forge 1.16.5 |
+| ModLauncher 9+ | Forge 1.21.11-61.1.5 |
 | Fabric | 1.21.11 |
 | Fabric (discrimination case) | 1.21.10 |
+
+The ModLauncher 9+ row targets **Forge**, not NeoForge as earlier drafts had it, since NeoForge
+runs no ModLauncher. The ModLauncher 9+ smoke test additionally registers one real mixin and
+asserts it applied: the spike could only infer mixin applicability from classloader identity, which
+is suggestive rather than proof, so that last step is where it actually gets demonstrated.
 
 The final row exists because four passing single-version launches would not prove that
 selection actually discriminates. Two Fabric versions in one jar, each loading its own
@@ -183,11 +234,13 @@ across that matrix, in CI, with `checkApiPurity` green.
 
 ## Risks
 
-- **ModLauncher 9+ module layer injection is the highest risk.** It differs across Forge and
-  NeoForge versions and is the least documented of the four. Mitigation: it is spiked first,
-  before the rest of the kernel is written. If it proves infeasible for some Forge range,
-  that backend's declared version span narrows and the limitation is recorded rather than
-  worked around.
+- **ModLauncher 9+ module layer injection (RETIRED, spike complete).** This was the highest risk
+  and the reason the spike ran before any kernel code. It resolved better than feared on Forge
+  (`Layer.GAME` works, release 8 compiles) and worse than feared in two ways that cost real scope:
+  the entrypoint cannot be invoked synchronously, which added two defaulted methods to the
+  `Platform` seam, and NeoForge turned out to share none of this infrastructure, which moved a whole
+  backend to SP-1b. Both were assumptions this spec asserted as fact; neither would have surfaced
+  before a late smoke failure. The spike-first ordering paid for itself here.
 - **Four bootstraps in one jar.** Mitigated by capability guards, and specifically covered by
   the smoke matrix, since every launch exercises three inert bootstraps alongside one active
   one.
