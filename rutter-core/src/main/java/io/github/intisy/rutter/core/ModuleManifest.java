@@ -24,6 +24,9 @@ public final class ModuleManifest {
 
     public static final String RESOURCE = "rutter-modules.properties";
 
+    private static final Set<String> KNOWN_FIELDS = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
+            "path", "platforms", "minecraft", "environment", "mixins", "priority", "entrypoint")));
+
     // Plain TreeSet<String> order would put "10" before "2"; module selection depends on
     // this order when several candidates tie on specificity.
     private static final Comparator<String> INDEX_ORDER = (left, right) -> {
@@ -73,21 +76,27 @@ public final class ModuleManifest {
         return new ModuleManifest(modules);
     }
 
+    private static List<String> indices(Properties properties) {
+        Set<String> rawIndices = new LinkedHashSet<>();
+        for (String key : properties.stringPropertyNames()) {
+            ModuleKey moduleKey = ModuleKey.parse(key);
+            if (moduleKey == null) {
+                continue;
+            }
+            if (!KNOWN_FIELDS.contains(moduleKey.field)) {
+                throw new RutterException("Unknown key '" + key + "' in the Rutter module manifest. "
+                        + "Recognised fields are " + KNOWN_FIELDS + ".");
+            }
+            rawIndices.add(moduleKey.index);
+        }
+        return orderedWithoutCollisions(rawIndices);
+    }
+
     /**
      * @implNote A numeric-first comparator makes uniqueness numeric too, so index collisions
      *     after normalization must be rejected before sorting, or a module would silently disappear.
      */
-    private static List<String> indices(Properties properties) {
-        Set<String> rawIndices = new LinkedHashSet<>();
-        for (String key : properties.stringPropertyNames()) {
-            if (!key.startsWith("module.")) {
-                continue;
-            }
-            int second = key.indexOf('.', "module.".length());
-            if (second > 0) {
-                rawIndices.add(key.substring("module.".length(), second));
-            }
-        }
+    private static List<String> orderedWithoutCollisions(Set<String> rawIndices) {
         Map<Object, String> byNormalized = new HashMap<>();
         for (String raw : rawIndices) {
             Object normalized = normalizedIndex(raw);
@@ -113,6 +122,28 @@ public final class ModuleManifest {
             return Integer.valueOf(value);
         } catch (NumberFormatException e) {
             return null;
+        }
+    }
+
+    private static final class ModuleKey {
+        private final String index;
+        private final String field;
+
+        private ModuleKey(String index, String field) {
+            this.index = index;
+            this.field = field;
+        }
+
+        private static ModuleKey parse(String key) {
+            if (!key.startsWith("module.")) {
+                return null;
+            }
+            String rest = key.substring("module.".length());
+            int dot = rest.indexOf('.');
+            if (dot <= 0 || dot == rest.length() - 1) {
+                return null;
+            }
+            return new ModuleKey(rest.substring(0, dot), rest.substring(dot + 1));
         }
     }
 

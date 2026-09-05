@@ -151,12 +151,10 @@ class ModuleSelectorTest {
                 "module.0.path=modules/first.jar\n"
                         + "module.0.platforms=FABRIC\n"
                         + "module.0.minecraft=1.21.11\n"
-                        + "module.0.specificity=5\n"
                         + "module.0.priority=10\n"
                         + "module.1.path=modules/second.jar\n"
                         + "module.1.platforms=FABRIC\n"
                         + "module.1.minecraft=1.21.11\n"
-                        + "module.1.specificity=5\n"
                         + "module.1.priority=10\n");
 
         assertEquals("modules/first.jar",

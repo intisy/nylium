@@ -172,4 +172,44 @@ class ModuleManifestTest {
                         + "module.0.environment=INTEGRATED\n"));
         assertTrue(thrown.getMessage().contains("INTEGRATED"));
     }
+
+    @Test
+    void rejectsAnUnrecognisedField() {
+        RutterException thrown = assertThrows(RutterException.class, () -> read(
+                "module.0.path=a.jar\nmodule.0.platforms=FABRIC\nmodule.0.minecraft=1.21.11\n"
+                        + "module.0.enviroment=CLIENT\n"));
+
+        assertTrue(thrown.getMessage().contains("module.0.enviroment"));
+        assertTrue(thrown.getMessage().contains("path"));
+        assertTrue(thrown.getMessage().contains("environment"));
+    }
+
+    @Test
+    void parsesAFullyPopulatedManifestWithAllKnownFields() {
+        ModuleManifest manifest = read(
+                "module.0.path=modules/a.jar\n"
+                        + "module.0.platforms=FABRIC\n"
+                        + "module.0.minecraft=1.21.11\n"
+                        + "module.0.environment=CLIENT\n"
+                        + "module.0.mixins=mixins.a.json\n"
+                        + "module.0.priority=5\n"
+                        + "module.0.entrypoint=io.github.intisy.rutter.example.Entry\n");
+
+        ModuleDescriptor module = manifest.modules().get(0);
+        assertEquals("modules/a.jar", module.path());
+        assertEquals(5, module.priority());
+        assertEquals("io.github.intisy.rutter.example.Entry",
+                module.entrypoint().orElseThrow(AssertionError::new));
+    }
+
+    @Test
+    void ignoresPropertiesOutsideTheModuleNamespace() {
+        ModuleManifest manifest = read(
+                "manifest.version=1\n"
+                        + "module.0.path=modules/a.jar\n"
+                        + "module.0.platforms=FABRIC\n"
+                        + "module.0.minecraft=1.21.11\n");
+
+        assertEquals(1, manifest.modules().size());
+    }
 }
