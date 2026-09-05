@@ -150,4 +150,26 @@ class ModuleManifestTest {
         ModuleDescriptor module = manifest.modules().get(0);
         assertFalse(module.entrypoint().isPresent());
     }
+
+    @Test
+    void rejectsIndicesThatCollideAfterNumericNormalization() {
+        RutterException thrown = assertThrows(RutterException.class, () -> read(
+                "module.2.path=modules/a.jar\n"
+                        + "module.2.platforms=FABRIC\n"
+                        + "module.2.minecraft=1.21.11\n"
+                        + "module.02.path=modules/b.jar\n"
+                        + "module.02.platforms=FABRIC\n"
+                        + "module.02.minecraft=1.21.10\n"));
+
+        assertTrue(thrown.getMessage().contains("'2'"));
+        assertTrue(thrown.getMessage().contains("'02'"));
+    }
+
+    @Test
+    void rejectsAnUnknownEnvironmentName() {
+        RutterException thrown = assertThrows(RutterException.class, () -> read(
+                "module.0.path=a.jar\nmodule.0.platforms=FABRIC\nmodule.0.minecraft=1.21.11\n"
+                        + "module.0.environment=INTEGRATED\n"));
+        assertTrue(thrown.getMessage().contains("INTEGRATED"));
+    }
 }

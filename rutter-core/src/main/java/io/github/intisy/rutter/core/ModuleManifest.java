@@ -13,11 +13,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.TreeSet;
 
 public final class ModuleManifest {
 
@@ -72,18 +73,38 @@ public final class ModuleManifest {
         return new ModuleManifest(modules);
     }
 
-    private static Iterable<String> indices(Properties properties) {
-        Set<String> found = new TreeSet<>(INDEX_ORDER);
+    private static List<String> indices(Properties properties) {
+        Set<String> rawIndices = new LinkedHashSet<>();
         for (String key : properties.stringPropertyNames()) {
             if (!key.startsWith("module.")) {
                 continue;
             }
             int second = key.indexOf('.', "module.".length());
             if (second > 0) {
-                found.add(key.substring("module.".length(), second));
+                rawIndices.add(key.substring("module.".length(), second));
             }
         }
-        return found;
+        // Different raw index tokens (e.g. "2" and "02") can normalize to the same integer;
+        // TreeSet with a numeric comparator would then silently drop the second module, so
+        // collisions are detected explicitly before the tokens are handed to the caller.
+        Map<Object, String> byNormalized = new HashMap<>();
+        for (String raw : rawIndices) {
+            Object normalized = normalizedIndex(raw);
+            String collidingRaw = byNormalized.put(normalized, raw);
+            if (collidingRaw != null) {
+                throw new RutterException("The Rutter module manifest declares two different module indices, '"
+                        + collidingRaw + "' and '" + raw + "', that both refer to the same module. "
+                        + "Give each module a distinct index.");
+            }
+        }
+        List<String> ordered = new ArrayList<>(rawIndices);
+        Collections.sort(ordered, INDEX_ORDER);
+        return ordered;
+    }
+
+    private static Object normalizedIndex(String raw) {
+        Integer number = tryParseInt(raw);
+        return number != null ? number : raw;
     }
 
     private static Integer tryParseInt(String value) {
