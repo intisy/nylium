@@ -212,4 +212,26 @@ class ModuleManifestTest {
 
         assertEquals(1, manifest.modules().size());
     }
+
+    @Test
+    void ignoresAModuleIndexKeyWithNoFieldPart() {
+        ModuleManifest manifest = read(
+                "module.0=irrelevant\n"
+                        + "module.0.path=modules/a.jar\n"
+                        + "module.0.platforms=FABRIC\n"
+                        + "module.0.minecraft=1.21.11\n");
+
+        assertEquals(1, manifest.modules().size());
+    }
+
+    @Test
+    void ignoresATrailingDotModuleKeyWithNoFieldPart() {
+        ModuleManifest manifest = read(
+                "module.0.path=modules/a.jar\n"
+                        + "module.0.platforms=FABRIC\n"
+                        + "module.0.minecraft=1.21.11\n"
+                        + "module.0.=irrelevant\n");
+
+        assertEquals(1, manifest.modules().size());
+    }
 }

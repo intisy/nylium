@@ -24,9 +24,6 @@ public final class ModuleManifest {
 
     public static final String RESOURCE = "rutter-modules.properties";
 
-    private static final Set<String> KNOWN_FIELDS = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
-            "path", "platforms", "minecraft", "environment", "mixins", "priority", "entrypoint")));
-
     // Plain TreeSet<String> order would put "10" before "2"; module selection depends on
     // this order when several candidates tie on specificity.
     private static final Comparator<String> INDEX_ORDER = (left, right) -> {
@@ -66,13 +63,15 @@ public final class ModuleManifest {
         } catch (IOException e) {
             throw new RutterException("Could not parse the Rutter module manifest", e);
         }
+        Set<String> consumed = new LinkedHashSet<>();
         List<ModuleDescriptor> modules = new ArrayList<>();
         for (String index : indices(properties)) {
-            modules.add(readModule(properties, index));
+            modules.add(readModule(properties, index, consumed));
         }
         if (modules.isEmpty()) {
             throw new RutterException("The Rutter module manifest declares no modules");
         }
+        rejectUnconsumedModuleKeys(properties, consumed);
         return new ModuleManifest(modules);
     }
 
@@ -80,16 +79,37 @@ public final class ModuleManifest {
         Set<String> rawIndices = new LinkedHashSet<>();
         for (String key : properties.stringPropertyNames()) {
             ModuleKey moduleKey = ModuleKey.parse(key);
-            if (moduleKey == null) {
-                continue;
+            if (moduleKey != null) {
+                rawIndices.add(moduleKey.index);
             }
-            if (!KNOWN_FIELDS.contains(moduleKey.field)) {
-                throw new RutterException("Unknown key '" + key + "' in the Rutter module manifest. "
-                        + "Recognised fields are " + KNOWN_FIELDS + ".");
-            }
-            rawIndices.add(moduleKey.index);
         }
         return orderedWithoutCollisions(rawIndices);
+    }
+
+    /**
+     * @implNote A key is recognised because the reader consumes it, not because a separate list
+     *     of field names says so; that keeps the reader and the validator from drifting apart.
+     */
+    private static void rejectUnconsumedModuleKeys(Properties properties, Set<String> consumed) {
+        for (String key : properties.stringPropertyNames()) {
+            ModuleKey moduleKey = ModuleKey.parse(key);
+            if (moduleKey == null || consumed.contains(key)) {
+                continue;
+            }
+            throw new RutterException("Unknown key '" + key + "' in the Rutter module manifest. "
+                    + "Recognised fields are " + Arrays.toString(fieldNames(consumed)) + ".");
+        }
+    }
+
+    private static String[] fieldNames(Set<String> keys) {
+        Set<String> fields = new LinkedHashSet<>();
+        for (String key : keys) {
+            ModuleKey moduleKey = ModuleKey.parse(key);
+            if (moduleKey != null) {
+                fields.add(moduleKey.field);
+            }
+        }
+        return fields.toArray(new String[0]);
     }
 
     /**
@@ -147,30 +167,35 @@ public final class ModuleManifest {
         }
     }
 
-    private static ModuleDescriptor readModule(Properties properties, String index) {
+    private static ModuleDescriptor readModule(Properties properties, String index, Set<String> consumed) {
         String prefix = "module." + index + ".";
-        String path = required(properties, prefix + "path");
-        VersionRange minecraft = VersionRange.parse(required(properties, prefix + "minecraft"));
-        Set<PlatformId> platforms = platforms(required(properties, prefix + "platforms"));
-        String environmentText = properties.getProperty(prefix + "environment");
+        String path = required(properties, consumed, prefix + "path");
+        VersionRange minecraft = VersionRange.parse(required(properties, consumed, prefix + "minecraft"));
+        Set<PlatformId> platforms = platforms(required(properties, consumed, prefix + "platforms"));
+        String environmentText = value(properties, consumed, prefix + "environment");
         Environment environment = environmentText == null || environmentText.trim().isEmpty()
                 ? null
                 : environment(environmentText.trim());
-        List<String> mixins = split(properties.getProperty(prefix + "mixins"));
-        int priority = priority(properties.getProperty(prefix + "priority"), prefix);
-        String entrypointText = properties.getProperty(prefix + "entrypoint");
+        List<String> mixins = split(value(properties, consumed, prefix + "mixins"));
+        int priority = priority(value(properties, consumed, prefix + "priority"), prefix);
+        String entrypointText = value(properties, consumed, prefix + "entrypoint");
         String entrypoint = entrypointText == null || entrypointText.trim().isEmpty()
                 ? null
                 : entrypointText.trim();
         return new ModuleDescriptor(path, platforms, minecraft, environment, mixins, priority, entrypoint);
     }
 
-    private static String required(Properties properties, String key) {
-        String value = properties.getProperty(key);
-        if (value == null || value.trim().isEmpty()) {
+    private static String value(Properties properties, Set<String> consumed, String key) {
+        consumed.add(key);
+        return properties.getProperty(key);
+    }
+
+    private static String required(Properties properties, Set<String> consumed, String key) {
+        String raw = value(properties, consumed, key);
+        if (raw == null || raw.trim().isEmpty()) {
             throw new RutterException("The Rutter module manifest is missing '" + key + "'");
         }
-        return value.trim();
+        return raw.trim();
     }
 
     private static Set<PlatformId> platforms(String value) {
