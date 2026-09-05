@@ -73,6 +73,10 @@ public final class ModuleManifest {
         return new ModuleManifest(modules);
     }
 
+    /**
+     * @implNote A numeric-first comparator makes uniqueness numeric too, so index collisions
+     *     after normalization must be rejected before sorting, or a module would silently disappear.
+     */
     private static List<String> indices(Properties properties) {
         Set<String> rawIndices = new LinkedHashSet<>();
         for (String key : properties.stringPropertyNames()) {
@@ -84,16 +88,13 @@ public final class ModuleManifest {
                 rawIndices.add(key.substring("module.".length(), second));
             }
         }
-        // Different raw index tokens (e.g. "2" and "02") can normalize to the same integer;
-        // TreeSet with a numeric comparator would then silently drop the second module, so
-        // collisions are detected explicitly before the tokens are handed to the caller.
         Map<Object, String> byNormalized = new HashMap<>();
         for (String raw : rawIndices) {
             Object normalized = normalizedIndex(raw);
             String collidingRaw = byNormalized.put(normalized, raw);
             if (collidingRaw != null) {
-                throw new RutterException("The Rutter module manifest declares two different module indices, '"
-                        + collidingRaw + "' and '" + raw + "', that both refer to the same module. "
+                throw new RutterException("The Rutter module manifest is ambiguous: indices '"
+                        + collidingRaw + "' and '" + raw + "' normalize to the same module position. "
                         + "Give each module a distinct index.");
             }
         }
