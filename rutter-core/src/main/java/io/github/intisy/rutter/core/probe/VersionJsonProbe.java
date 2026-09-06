@@ -46,10 +46,54 @@ public final class VersionJsonProbe implements VersionProbe {
                     text.append(line).append('\n');
                 }
             }
-            Matcher matcher = ID.matcher(text);
+            Matcher matcher = ID.matcher(topLevelMembersOf(text.toString()));
             return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
         } catch (IOException e) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * @implNote An unscoped match would take an {@code id} out of any nested object, and this probe
+     * is the only one that answers on ModLauncher 8, so a wrong match there silently selects a
+     * wrong module. Dropping everything nested deeper than the outermost object keeps the field
+     * match itself a regex, so {@code rutter-core} still needs no JSON dependency.
+     */
+    private static String topLevelMembersOf(String json) {
+        StringBuilder members = new StringBuilder(json.length());
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int index = 0; index < json.length(); index++) {
+            char character = json.charAt(index);
+            if (inString) {
+                if (depth <= 1) {
+                    members.append(character);
+                }
+                if (escaped) {
+                    escaped = false;
+                } else if (character == '\\') {
+                    escaped = true;
+                } else if (character == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (character == '"') {
+                inString = true;
+            } else if (character == '{' || character == '[') {
+                depth++;
+            } else if (character == '}' || character == ']') {
+                if (depth <= 1) {
+                    members.append(character);
+                }
+                depth--;
+                continue;
+            }
+            if (depth <= 1) {
+                members.append(character);
+            }
+        }
+        return members.toString();
     }
 }

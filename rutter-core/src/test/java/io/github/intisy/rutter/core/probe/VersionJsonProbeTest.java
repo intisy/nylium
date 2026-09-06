@@ -64,4 +64,36 @@ class VersionJsonProbeTest {
             assertFalse(new VersionJsonProbe(loader).detect().isPresent());
         }
     }
+
+    @Test
+    void ignoresAnIdNestedInsideAnotherObject(@TempDir Path dir) throws Exception {
+        try (URLClassLoader loader = withVersionJson(dir,
+                "{\"pack_version\": {\"id\": \"99.9\"}, \"id\": \"1.21.11\"}")) {
+            assertEquals("1.21.11", new VersionJsonProbe(loader).detect().orElseThrow(AssertionError::new));
+        }
+    }
+
+    @Test
+    void findsNothingWhenOnlyANestedIdExists(@TempDir Path dir) throws Exception {
+        try (URLClassLoader loader = withVersionJson(dir,
+                "{\"name\": \"1.21.11\", \"pack_version\": {\"id\": \"99.9\"}}")) {
+            assertFalse(new VersionJsonProbe(loader).detect().isPresent());
+        }
+    }
+
+    @Test
+    void ignoresAnIdInsideAnArrayOfObjects(@TempDir Path dir) throws Exception {
+        try (URLClassLoader loader = withVersionJson(dir,
+                "{\"libraries\": [{\"id\": \"99.9\"}], \"id\": \"26.2\"}")) {
+            assertEquals("26.2", new VersionJsonProbe(loader).detect().orElseThrow(AssertionError::new));
+        }
+    }
+
+    @Test
+    void isNotFooledByBracesInsideAStringValue(@TempDir Path dir) throws Exception {
+        try (URLClassLoader loader = withVersionJson(dir,
+                "{\"name\": \"{ \\\"id\\\": \\\"99.9\\\" }\", \"id\": \"1.21.11\"}")) {
+            assertEquals("1.21.11", new VersionJsonProbe(loader).detect().orElseThrow(AssertionError::new));
+        }
+    }
 }
