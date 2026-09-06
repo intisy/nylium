@@ -1,6 +1,5 @@
 package io.github.intisy.rutter.bootstrap.ml9;
 
-import cpw.mods.modlauncher.api.IEnvironment;
 import cpw.mods.modlauncher.api.IModuleLayerManager;
 import io.github.intisy.rutter.api.Environment;
 import io.github.intisy.rutter.api.Platform;
@@ -10,7 +9,6 @@ import org.spongepowered.asm.mixin.Mixins;
 
 import java.lang.reflect.Method;
 import java.nio.file.Path;
-import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -21,45 +19,27 @@ import java.util.Optional;
  */
 final class Ml9Platform implements Platform {
 
-    private final Environment environment;
-
     private volatile Path pendingModulePath;
     private volatile String moduleName;
     private volatile Runnable pendingActivation;
     private volatile ClassLoader resolvedLoader;
-
-    Ml9Platform(IEnvironment env) {
-        this.environment = environmentOf(env);
-    }
 
     @Override
     public PlatformId id() {
         return PlatformId.MODLAUNCHER_9;
     }
 
+    /**
+     * @implNote Answers SERVER unconditionally today, and cannot currently do better. The SERVICE
+     * layer this class lives in is a parent of the GAME layer, which is why {@link #activate} has
+     * to find the game class loader reflectively, so this probe never sees the client class even on
+     * a client. {@code IEnvironment.Keys.LAUNCHTARGET} is the signal that would answer it, and it
+     * is available by {@code beginScanning} (measured as {@code forge_server} on Forge 1.21.11),
+     * but not yet at {@code onLoad}, where {@code RutterKernel.boot} has to select a module.
+     */
     @Override
     public Environment environment() {
-        return environment;
-    }
-
-    /**
-     * @implNote The SERVICE layer this class is loaded into is a parent of the GAME layer, which is
-     * why {@link #activate} has to go and find the game class loader reflectively; probing for
-     * {@code net.minecraft.client.Minecraft} from here therefore reports SERVER even on a client.
-     * ModLauncher publishes its own {@code --launchTarget} argument as
-     * {@code IEnvironment.Keys.LAUNCHTARGET} before any service's {@code onLoad} runs, so that
-     * value is available this early and does distinguish {@code forgeclient} from
-     * {@code forgeserver}. The class probe remains as the fallback for an embedding that publishes
-     * no launch target at all.
-     */
-    private static Environment environmentOf(IEnvironment env) {
-        Optional<String> launchTarget = env.getProperty(IEnvironment.Keys.LAUNCHTARGET.get());
-        if (!launchTarget.isPresent()) {
-            return exists("net.minecraft.client.Minecraft") ? Environment.CLIENT : Environment.SERVER;
-        }
-        return launchTarget.get().toLowerCase(Locale.ROOT).contains("client")
-                ? Environment.CLIENT
-                : Environment.SERVER;
+        return exists("net.minecraft.client.Minecraft") ? Environment.CLIENT : Environment.SERVER;
     }
 
     @Override

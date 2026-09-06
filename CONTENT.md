@@ -69,7 +69,8 @@ module.1.entrypoint=com.example.mymod.Forge116Module
   (`[1.20,1.21.11]`, `[1.20,)`) where `[` and `]` are inclusive and `(` and `)` are exclusive.
 - `environment` (`CLIENT` or `SERVER`), `mixins` (comma-separated config names), `priority`
   (an integer, for resolving ties) and `entrypoint` (a class with a public static
-  `void rutterInit()`) are optional.
+  `void rutterInit()`) are optional. Note that both ModLauncher backends report SERVER
+  unconditionally, so a `CLIENT` module cannot match there; see the limitations below.
 - An unrecognised key, or two indices that collide after normalisation (`01` and `1`, for
   example), fail the manifest with a specific error rather than being silently ignored.
 
@@ -107,7 +108,7 @@ build time:
 
 ## Known limitations
 
-This is a working kernel with two documented gaps, not a finished product:
+This is a working kernel with three documented gaps, not a finished product:
 
 - **ModLauncher 8: dispatch works, but a module cannot see Minecraft classes.** Dispatch is
   verified on a real Forge 1.16.5 server: the correct module is selected, classpathed and its
@@ -116,6 +117,11 @@ This is a working kernel with two documented gaps, not a finished product:
   exists, so a module that needs to touch a Minecraft class, or mixin into one, cannot
   currently work through this backend. Fixing this needs its own spike, which is recorded in the
   SP-1 design spec rather than in any issue tracker.
+- **Neither ModLauncher backend can tell a client from a server.** Both answer `SERVER`, so a
+  module declaring `environment=CLIENT` never matches on Forge 1.13+. The loader knows the answer
+  and publishes it as its launch target, but measured on real 1.16.5 and 1.21.11 servers that value
+  is not set yet at the hook Rutter boots from; it appears one hook later. Fixing it means booting
+  the kernel later on those backends, which needs its own task.
 - **A ModLauncher 9+ module cannot currently be installed by dropping it into `mods/`.**
   `ILaunchPluginService` is discovered only from ModLauncher's boot module layer, which is
   built from the literal JVM classpath, not from Forge's own `mods/` folder scanning. The

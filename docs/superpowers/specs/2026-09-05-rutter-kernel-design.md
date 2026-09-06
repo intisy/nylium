@@ -191,6 +191,27 @@ problem) and a companion `ILaunchPluginService` as this generation's analogue of
 with `Platform.moduleClassLoader` returning the real transforming loader. The plan budgeted no spike
 for this backend; that was an omission.
 
+**Neither ModLauncher backend can detect the environment. Recorded 2026-09-06, measured.** Both
+`Ml8Platform.environment()` and `Ml9Platform.environment()` answer SERVER unconditionally, so a
+module declaring `environment=CLIENT` can never match on Forge 1.13+. Their
+`net.minecraft.client.Minecraft` probe cannot work for the same classloader reasons as the sections
+above: on ModLauncher 8 the service loader is a sibling of the game loader, and on ModLauncher 9 the
+SERVICE layer is a parent of GAME.
+
+`IEnvironment.Keys.LAUNCHTARGET` looked like the answer, and it is the right signal, but it is not
+available when Rutter needs it. Instrumented against both real servers, at `onLoad` every
+argument-derived key is empty (`LAUNCHTARGET`, `GAMEDIR`, `VERSION`, `NAMING`) while the keys the
+`Launcher` constructor sets are present (`MLIMPL_VERSION`, `MLSPEC_VERSION`), so this is a
+population-order fact and not a key-identity or classloader problem. `LAUNCHTARGET` first appears at
+`initialize` on ModLauncher 8 and by `beginScanning` on ModLauncher 9, in both cases as
+`forge_server`, which is after the `onLoad` hook where `RutterKernel.boot` has to select a module.
+
+Closing this therefore means moving kernel boot to a later hook on both backends: plausible for
+ModLauncher 9, whose `beginScanning` both carries the launch target and is where the module jar is
+handed over, and unproven for ModLauncher 8, whose classpathing is an `addURL` at `onLoad`. That is
+a boot-path change to two backends that are proven as they stand, so it belongs to its own task
+rather than to a fix wave.
+
 **ModLauncher 9+: works fully, but is NOT installable by dropping a jar in `mods/`.** Recorded
 2026-09-06. Note this is a *deployment* limitation, not a correctness one, and so is a different kind
 of gap from ModLauncher 8's above. Dispatch, mixin application and the deferred activation are all
