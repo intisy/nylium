@@ -17,11 +17,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ValidationTest {
 
     private RutterExtension extensionWith(String platform, String minecraft) {
+        return extensionWith(platform, minecraft, "demo");
+    }
+
+    private RutterExtension extensionWith(String platform, String minecraft, String modId) {
         Project project = ProjectBuilder.builder().build();
         project.getPlugins().apply("io.github.intisy.rutter");
         RutterExtension rutter = (RutterExtension) project.getExtensions().getByName("rutter");
         rutter.mod(mod -> {
-            mod.getId().set("demo");
+            mod.getId().set(modId);
             mod.getName().set("Demo");
             mod.getVersion().set("1.0.0");
         });
@@ -162,20 +166,20 @@ class ValidationTest {
     }
 
     @Test
-    void rejectsAModIdFabricLoaderWouldRefuse() {
-        Project project = ProjectBuilder.builder().build();
-        project.getPlugins().apply("io.github.intisy.rutter");
-        RutterExtension rutter = (RutterExtension) project.getExtensions().getByName("rutter");
-        rutter.mod(mod -> mod.getId().set("My.Mod"));
-        rutter.module("1.21.11", module -> {
-            module.getJar().set(new File(project.getProjectDir(), "module.jar"));
-            module.getPlatforms().set(Collections.singletonList("FABRIC"));
-            module.getMinecraft().set("1.21.11");
-        });
+    void rejectsAFabricIllegalModIdWhenFabricIsDeclared() {
+        RutterExtension rutter = extensionWith("FABRIC", "1.21.11", "My.Mod");
         InvalidUserDataException thrown = assertThrows(InvalidUserDataException.class,
                 rutter::resolve);
         assertTrue(thrown.getMessage().contains("My.Mod"));
         assertTrue(thrown.getMessage().contains("^[a-z][a-z0-9-_]{1,63}$"));
+    }
+
+    @Test
+    void acceptsAFabricIllegalModIdWhenNoModuleDeclaresFabric() {
+        List<ResolvedModule> modules =
+                extensionWith("LAUNCHWRAPPER", "[1.7,1.12.2]", "My.Mod").resolve();
+        assertEquals(1, modules.size());
+        assertTrue(modules.get(0).path().startsWith("modules/My.Mod-"));
     }
 
     @Test

@@ -278,8 +278,11 @@ Rejected while the build is being configured, before any task runs:
 - A duplicate module name, an empty `rutter { }` block, and a module with no declared platforms
   are all rejected with a specific message rather than silently accepted.
 - A module with no `jar` is rejected: there is nothing to embed.
-- A missing `mod { id }` is rejected, and so is an id Fabric Loader would refuse; it has to match
-  `^[a-z][a-z0-9-_]{1,63}$`.
+- A missing `mod { id }` is rejected. An id Fabric Loader would refuse is rejected too, but only
+  when some module declares `FABRIC`, the same condition that generates the `fabric.mod.json` the
+  id lands in; it then has to match `^[a-z][a-z0-9-_]{1,63}$`. To a mod targeting only
+  LaunchWrapper or ModLauncher the id is just a module file name prefix, so Fabric's rule does not
+  apply to it.
 - A blank `mod { modulePrefix }` is rejected. Leave it unset to default to the mod id.
 - A `mod { environment }` other than `*`, `client` or `server` is rejected. Fabric Loader accepts
   exactly those three and refuses anything else at launch with "Invalid environment type"; the

@@ -68,22 +68,28 @@ public class RutterExtension {
         return prefix.trim();
     }
 
-    /**
-     * @implNote The pattern is Fabric Loader's own, and an id it refuses is a launch failure with
-     *     an otherwise green build; the id also becomes the default module file name prefix.
-     */
     private String requiredId() {
         String id = mod.getId().getOrNull();
         if (id == null || id.trim().isEmpty()) {
             throw new InvalidUserDataException(
                     "The Rutter mod id is not set. Set it in the rutter { mod { id = ... } } block.");
         }
-        String trimmed = id.trim();
-        if (!MOD_ID.matcher(trimmed).matches()) {
-            throw new InvalidUserDataException("The Rutter mod id '" + trimmed + "' is not a legal"
-                    + " mod id. It has to match " + MOD_ID.pattern() + ".");
+        return id.trim();
+    }
+
+    /**
+     * @implNote The pattern is Fabric Loader's own, and an id it refuses is a launch failure with
+     *     an otherwise green build. Checked only when a module declares FABRIC, which is the same
+     *     condition that generates the {@code fabric.mod.json} the id lands in: to a mod targeting
+     *     only LaunchWrapper or ModLauncher the id is just a module file name prefix, and Fabric's
+     *     rule is none of its business.
+     */
+    private void requireFabricLegalId() {
+        String id = requiredId();
+        if (!MOD_ID.matcher(id).matches()) {
+            throw new InvalidUserDataException("The Rutter mod id '" + id + "' is not a legal"
+                    + " fabric mod id. It has to match " + MOD_ID.pattern() + ".");
         }
-        return trimmed;
     }
 
     List<ResolvedModule> resolve() {
@@ -100,6 +106,9 @@ public class RutterExtension {
         List<ResolvedModule> resolved = new ArrayList<ResolvedModule>();
         for (String name : moduleOrder) {
             resolved.add(resolveOne(modules.getByName(name), prefix));
+        }
+        if (RutterPlugin.platformUnion(resolved).contains(PlatformId.FABRIC)) {
+            requireFabricLegalId();
         }
         return resolved;
     }
