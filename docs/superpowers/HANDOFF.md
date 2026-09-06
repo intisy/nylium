@@ -6,16 +6,16 @@ nothing depends on a prior conversation.
 
 **Renamed from Rutter to Nylium on 2026-09-06.** The rename is mechanical and complete in the
 working tree, but the 103 commits on `development` predate it and still say "rutter", as do the
-`master` commits. Nothing was ever published under either name, so no coordinate or consumer
+`main` commits. Nothing was ever published under either name, so no coordinate or consumer
 broke.
 
 ## Where things are
 
 - Repo: `F:\Documents\GitHub\intisy\minecraft\mods\Nylium`
-- **Published 2026-09-06 as <https://github.com/intisy/nylium>**, public, default branch `master`.
-- Branches: `master` (default, what the README generator renders onto) and `development` (where
-  work happens). Both are currently at the same commit; `development` was fast-forwarded into
-  `master` at publish time.
+- **Published 2026-09-06 as <https://github.com/intisy/nylium>**, public, default branch `main`.
+- Branches: exactly two long-lived, `main` (default, what the README generator renders onto) and
+  `development` (where work happens); anything else is a short-lived feature branch off
+  `development`. Both are currently at the same commit.
 - CI: `Test` is green on both branches. `Smoke` and `Generate README` are `workflow_dispatch` only.
 - Licensed **Apache-2.0**. The choice is load-bearing: Nylium is shadowed into consumer mod jars, so
   a copyleft license would be viral into every consuming mod and defeat the point. Apache-2.0 also
