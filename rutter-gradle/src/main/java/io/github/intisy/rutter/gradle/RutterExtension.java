@@ -21,6 +21,13 @@ public class RutterExtension {
     private final ModSpec mod;
     private final NamedDomainObjectContainer<ModuleSpec> modules;
 
+    /**
+     * @implNote {@code NamedDomainObjectContainer} iterates sorted by name, not insertion order,
+     *     but the manifest's module index has to be declaration order, so that order is tracked
+     *     separately here.
+     */
+    private final List<String> moduleOrder = new ArrayList<String>();
+
     public RutterExtension(Project project) {
         this.project = project;
         this.mod = project.getObjects().newInstance(ModSpec.class);
@@ -37,6 +44,7 @@ public class RutterExtension {
 
     public void module(String name, Action<? super ModuleSpec> action) {
         action.execute(modules.create(name));
+        moduleOrder.add(name);
     }
 
     public NamedDomainObjectContainer<ModuleSpec> getModules() {
@@ -77,8 +85,8 @@ public class RutterExtension {
                     "Rutter declares no modules. Add at least one rutter { module('...') { } } block.");
         }
         List<ResolvedModule> resolved = new ArrayList<ResolvedModule>();
-        for (ModuleSpec spec : modules) {
-            resolved.add(resolveOne(spec, prefix));
+        for (String name : moduleOrder) {
+            resolved.add(resolveOne(modules.getByName(name), prefix));
         }
         return resolved;
     }

@@ -40,3 +40,24 @@ def writeRutterVersion = tasks.register('writeRutterVersion') {
 tasks.named('processResources') {
     from(writeRutterVersion)
 }
+
+def testRepository = rootProject.layout.buildDirectory.dir('test-repo')
+
+def subprojectsToPublish = [':rutter-api', ':rutter-core', ':rutter-bootstrap-fabric',
+                            ':rutter-bootstrap-launchwrapper', ':rutter-bootstrap-modlauncher8',
+                            ':rutter-bootstrap-modlauncher9']
+
+tasks.named('test') {
+    subprojectsToPublish.each { path ->
+        dependsOn "${path}:publishAllPublicationsToRutterTestRepository"
+    }
+    dependsOn ':rutter-testmod:universalJar'
+
+    systemProperty 'rutter.test.repo', testRepository.get().asFile.absolutePath
+    systemProperty 'rutter.test.version', project.version
+    systemProperty 'rutter.test.modules',
+            project(':rutter-testmod').layout.buildDirectory.dir('modules').get().asFile.absolutePath
+    systemProperty 'rutter.test.reference',
+            project(':rutter-testmod').layout.buildDirectory
+                    .file('universal/rutter-testmod-universal.jar').get().asFile.absolutePath
+}

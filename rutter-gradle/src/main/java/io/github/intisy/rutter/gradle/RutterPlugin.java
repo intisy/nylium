@@ -149,7 +149,7 @@ public class RutterPlugin implements Plugin<Project> {
                         task.getModules().add(entry);
                     }
                     task.getStamp().set(project.getLayout().getBuildDirectory()
-                            .file("rutter/rutterVerifyModules.stamp"));
+                            .file("rutter-internal/rutterVerifyModules.stamp"));
                 });
     }
 

@@ -35,6 +35,10 @@ public abstract class RutterVerifyModulesTask extends DefaultTask {
     @Nested
     public abstract ListProperty<ModuleToVerify> getModules();
 
+    /**
+     * @implNote Wired to a directory outside {@code build/rutter/}, since that one is swept
+     *     wholesale into the universal jar and this stamp is not metadata to embed.
+     */
     @OutputFile
     public abstract RegularFileProperty getStamp();
 

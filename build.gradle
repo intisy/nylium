@@ -48,4 +48,18 @@ subprojects {
     tasks.named('check') {
         dependsOn tasks.named('checkClassFileVersion')
     }
+
+    publishing {
+        repositories {
+            maven {
+                name = 'rutterTest'
+                url = rootProject.layout.buildDirectory.dir('test-repo')
+            }
+        }
+        publications {
+            maven(MavenPublication) {
+                from components.java
+            }
+        }
+    }
 }
