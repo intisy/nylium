@@ -50,9 +50,11 @@ def subprojectsToPublish = rootProject.ext.embeddedArtifactPaths
 
 /**
  * @implNote The differential gate reaches its reference material through system properties, which
- *     are opaque strings to Gradle, so without these declarations the content of the reference jar,
- *     the module jars and the published test repository is not a task input: editing any of them
- *     left {@code test} UP-TO-DATE and the acceptance gate silently did not run.
+ *     are opaque strings to Gradle, so without these declarations the content of the reference jar
+ *     and the module jars is not a task input: editing either left {@code test} UP-TO-DATE and the
+ *     acceptance gate silently did not run. The test repository is deliberately not declared: the
+ *     publications are snapshots, so every publish writes a fresh timestamped artifact set and an
+ *     incrementing {@code maven-metadata.xml}, which could never match a previous snapshot.
  */
 tasks.named('test') {
     subprojectsToPublish.each { path ->
@@ -65,9 +67,6 @@ tasks.named('test') {
             .withPathSensitivity(PathSensitivity.NAME_ONLY)
     inputs.dir(testmodModules)
             .withPropertyName('rutterModuleJars')
-            .withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.dir(testRepository)
-            .withPropertyName('rutterTestRepository')
             .withPathSensitivity(PathSensitivity.RELATIVE)
 
     systemProperty 'rutter.test.repo', testRepository.get().asFile.absolutePath
