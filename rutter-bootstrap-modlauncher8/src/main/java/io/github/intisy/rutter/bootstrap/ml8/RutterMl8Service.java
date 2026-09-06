@@ -4,6 +4,7 @@ import cpw.mods.modlauncher.api.IEnvironment;
 import cpw.mods.modlauncher.api.ITransformationService;
 import cpw.mods.modlauncher.api.ITransformer;
 import cpw.mods.modlauncher.api.IncompatibleEnvironmentException;
+import io.github.intisy.rutter.core.ModuleDescriptor;
 import io.github.intisy.rutter.core.RutterKernel;
 
 import java.nio.file.Paths;
@@ -37,10 +38,11 @@ public final class RutterMl8Service implements ITransformationService {
         if (isModLauncher9OrNewer()) {
             return;
         }
-        RutterKernel.boot(
+        ModuleDescriptor module = RutterKernel.boot(
                 new Ml8Platform(),
                 RutterMl8Service.class.getClassLoader(),
                 Paths.get(".").resolve("rutter").resolve("cache"));
+        System.out.println("[Rutter] booted " + module);
     }
 
     @Override
