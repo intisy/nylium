@@ -1,0 +1,8 @@
+kind: java-library
+title: Rutter
+description: A dispatch kernel that ships a Minecraft mod as one universal jar and loads the precompiled module matching whatever loader and Minecraft version it lands on.
+content_intro: Everything below covers the compatibility contract, the four backends, the manifest format and a minimal consumer walkthrough.
+sections:
+  - title
+  - description
+  - content
