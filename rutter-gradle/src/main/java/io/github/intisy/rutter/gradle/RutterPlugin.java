@@ -7,10 +7,13 @@ import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.file.ArchiveOperations;
+import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.jvm.tasks.Jar;
 
+import javax.inject.Inject;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -26,6 +29,18 @@ import java.util.Properties;
 import java.util.Set;
 
 public class RutterPlugin implements Plugin<Project> {
+
+    private final ArchiveOperations archiveOperations;
+
+    /**
+     * @implNote Injected because the embedded jars are unpacked lazily, at task execution time;
+     *     calling {@code Project.zipTree} there would capture the {@link Project} itself, which
+     *     breaks the configuration cache, whereas this service is safe to hold across it.
+     */
+    @Inject
+    public RutterPlugin(ArchiveOperations archiveOperations) {
+        this.archiveOperations = archiveOperations;
+    }
 
     @Override
     public void apply(Project project) {
@@ -72,12 +87,15 @@ public class RutterPlugin implements Plugin<Project> {
             evaluated.getTasks().register("rutterUniversalJar", Jar.class, jar -> {
                 jar.setDescription("Assembles the Rutter universal jar.");
                 jar.getArchiveClassifier().set("universal");
+                // FAIL surfaces a colliding entry instead of silently keeping one, per SP-1's lesson.
+                jar.setDuplicatesStrategy(DuplicatesStrategy.FAIL);
                 jar.dependsOn(metadata);
 
+                final ArchiveOperations archives = archiveOperations;
                 jar.from(evaluated.provider(() -> {
                     List<Object> trees = new ArrayList<Object>();
                     for (File artifact : embed.getFiles()) {
-                        trees.add(evaluated.zipTree(artifact));
+                        trees.add(archives.zipTree(artifact));
                     }
                     return trees;
                 }), copy -> copy.exclude("META-INF/MANIFEST.MF", "META-INF/*.SF",

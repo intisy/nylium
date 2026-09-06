@@ -8,8 +8,14 @@ import org.gradle.testfixtures.ProjectBuilder;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.Properties;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,23 +42,42 @@ class UniversalJarWiringTest {
         return project;
     }
 
-    private Set<String> embeddedArtifacts(Project project) {
-        Set<String> names = new LinkedHashSet<String>();
+    private Set<String> embeddedCoordinates(Project project) {
+        Set<String> coordinates = new LinkedHashSet<String>();
         for (Dependency dependency
                 : project.getConfigurations().getByName("rutterEmbed").getDependencies()) {
-            names.add(dependency.getName());
+            coordinates.add(dependency.getGroup() + ":" + dependency.getName() + ":"
+                    + dependency.getVersion());
         }
-        return names;
+        return coordinates;
+    }
+
+    private String pluginVersion() {
+        InputStream stream = RutterPlugin.class.getResourceAsStream(
+                "/rutter-gradle-version.properties");
+        Properties properties = new Properties();
+        try {
+            properties.load(new InputStreamReader(stream, StandardCharsets.UTF_8));
+            stream.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return properties.getProperty("version").trim();
     }
 
     @Test
-    void embedsOnlyTheBootstrapForTheDeclaredPlatform() {
-        Set<String> embedded = embeddedArtifacts(projectWith("FABRIC"));
-        assertTrue(embedded.contains("rutter-api"));
-        assertTrue(embedded.contains("rutter-core"));
-        assertTrue(embedded.contains("rutter-bootstrap-fabric"));
-        assertFalse(embedded.contains("rutter-bootstrap-modlauncher9"));
-        assertFalse(embedded.contains("rutter-bootstrap-launchwrapper"));
+    void embedsOnlyTheBootstrapForTheDeclaredPlatformAtThePluginVersion() {
+        String version = pluginVersion();
+        Set<String> embedded = embeddedCoordinates(projectWith("FABRIC"));
+        assertTrue(embedded.contains("io.github.intisy.rutter:rutter-api:" + version));
+        assertTrue(embedded.contains("io.github.intisy.rutter:rutter-core:" + version));
+        assertTrue(embedded.contains("io.github.intisy.rutter:rutter-bootstrap-fabric:" + version));
+        assertFalse(embedded.contains(
+                "io.github.intisy.rutter:rutter-bootstrap-modlauncher8:" + version));
+        assertFalse(embedded.contains(
+                "io.github.intisy.rutter:rutter-bootstrap-modlauncher9:" + version));
+        assertFalse(embedded.contains(
+                "io.github.intisy.rutter:rutter-bootstrap-launchwrapper:" + version));
     }
 
     @Test
