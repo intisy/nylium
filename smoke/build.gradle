@@ -1,9 +1,5 @@
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 
-dependencies {
-    testImplementation project(':rutter-api')
-}
-
 def serversDir = layout.buildDirectory.dir('servers')
 
 /**
@@ -20,7 +16,6 @@ def javaLauncherFor(int version) {
 }
 
 def java8 = javaLauncherFor(8)
-def java17 = javaLauncherFor(17)
 def java21 = javaLauncherFor(21)
 
 tasks.register('provisionFabricServers') {
@@ -279,7 +274,6 @@ tasks.named('test') {
     javaLauncher = java21
     doFirst {
         systemProperty 'rutter.smoke.java.8', java8.get().executablePath.asFile.absolutePath
-        systemProperty 'rutter.smoke.java.17', java17.get().executablePath.asFile.absolutePath
         systemProperty 'rutter.smoke.java.21', java21.get().executablePath.asFile.absolutePath
     }
 }

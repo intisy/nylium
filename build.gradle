@@ -11,7 +11,6 @@ subprojects {
         mavenCentral()
         maven { name = 'fabric';     url = 'https://maven.fabricmc.net/' }
         maven { name = 'forge';      url = 'https://maven.minecraftforge.net/' }
-        maven { name = 'neoforged';  url = 'https://maven.neoforged.net/releases/' }
         maven { name = 'sponge';     url = 'https://repo.spongepowered.org/repository/maven-public/' }
         maven { name = 'mojang';     url = 'https://libraries.minecraft.net/' }
         maven {
