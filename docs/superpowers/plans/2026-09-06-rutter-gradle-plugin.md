@@ -1943,7 +1943,15 @@ import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.TaskAction;
 ```
 
-Give the task a `MapProperty<String, java.util.List<String>>` of module name to declared mixins, a `ConfigurableFileCollection` of the module jars keyed in the same order, and an `@OutputFile` stamp file so the task can be up to date. In the action, resolve each module jar and call `ModuleJarInspector.verify`, then write the stamp. Register it in `afterEvaluate` and add `jar.dependsOn(verify)` to `rutterUniversalJar`.
+Give the task a `@Nested ListProperty<ModuleToVerify>`, where `ModuleToVerify` is a managed nested type holding `@Input` module name, `@Input` mixins and `@InputFile` jar **together**, plus an `@OutputFile` stamp file so the task can be up to date. In the action, loop the nested values, call `ModuleJarInspector.verify` for each, then write the stamp. Register it in `afterEvaluate` and add `jar.dependsOn(verify)` to `rutterUniversalJar`.
+
+Keeping the three fields in one value type is the point. A map of mixins keyed by name plus a separately populated file collection has no type-level guarantee the two stay aligned, so a later change to one population order would silently pair a jar with another module's mixin list, producing either a false pass or an error naming the wrong module.
+
+`@InputFile` on the nested jar property is also what carries the implicit task dependency: a consumer writing `jar = tasks.named('remapJar').flatMap { it.archiveFile }` gets `remapJar` wired as a producer automatically, so verification cannot run before the jar is built. Add a functional test that proves this rather than assuming it: declare a producer task in the fixture, wire a module's `jar` from its output, invoke `rutterVerifyModules` **without** naming the producer, and assert the producer actually executed. Also add a test that a jar containing `io/github/intisy/rutter/apiextra/Foo.class` is accepted, since the trailing slash in `API_PREFIX` is what makes that correct and is exactly the character a later simplification removes.
+
+Pass `moduleName` into the entry-reading helper so an unreadable jar's error names the module too, matching the other three messages, and wrap the stamp write's `IOException` as `UncheckedIOException` the way `RutterTextFileTask` does.
+
+Every fixture that declares a module jar must write a **real** jar, via a small `emptyJar` helper. A text file named `module.jar` works only until something opens it, and then fails with an `UncheckedIOException` pointing at a fixture nobody suspects.
 
 - [ ] **Step 5: Run**
 
