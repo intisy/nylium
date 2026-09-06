@@ -44,15 +44,10 @@ final class ModuleJarInspector {
 
     private static Set<String> entries(String moduleName, File jar) {
         Set<String> names = new LinkedHashSet<String>();
-        try {
-            JarFile file = new JarFile(jar);
-            try {
-                Enumeration<JarEntry> enumeration = file.entries();
-                while (enumeration.hasMoreElements()) {
-                    names.add(enumeration.nextElement().getName());
-                }
-            } finally {
-                file.close();
+        try (JarFile file = new JarFile(jar)) {
+            Enumeration<JarEntry> enumeration = file.entries();
+            while (enumeration.hasMoreElements()) {
+                names.add(enumeration.nextElement().getName());
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Rutter module '" + moduleName + "' has an unreadable jar "
