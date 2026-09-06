@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,9 +28,19 @@ class UpToDateFunctionalTest {
         Files.write(target, content.getBytes(StandardCharsets.UTF_8));
     }
 
+    private void emptyJar(String relativePath) throws IOException {
+        Path target = projectDir.resolve(relativePath);
+        Files.createDirectories(target.getParent());
+        ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(target));
+        zip.putNextEntry(new ZipEntry("META-INF/MANIFEST.MF"));
+        zip.write("Manifest-Version: 1.0\n".getBytes(StandardCharsets.UTF_8));
+        zip.closeEntry();
+        zip.close();
+    }
+
     private void fixture(String minecraft, String modVersion) throws IOException {
         write("settings.gradle", "rootProject.name = 'fixture'\n");
-        write("module.jar", "not a real jar for this test\n");
+        emptyJar("module.jar");
         write("build.gradle", ""
                 + "plugins { id 'io.github.intisy.rutter' }\n"
                 + "rutter {\n"

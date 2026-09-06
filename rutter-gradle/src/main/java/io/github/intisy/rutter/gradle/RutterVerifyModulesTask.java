@@ -13,6 +13,7 @@ import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskAction;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -38,13 +39,17 @@ public abstract class RutterVerifyModulesTask extends DefaultTask {
     public abstract RegularFileProperty getStamp();
 
     @TaskAction
-    public void verify() throws IOException {
+    public void verify() {
         for (ModuleToVerify module : getModules().get()) {
             ModuleJarInspector.verify(module.getModuleName().get(),
                     module.getJar().get().getAsFile(), module.getMixins().get());
         }
         Path stamp = getStamp().get().getAsFile().toPath();
-        Files.createDirectories(stamp.getParent());
-        Files.write(stamp, new byte[0]);
+        try {
+            Files.createDirectories(stamp.getParent());
+            Files.write(stamp, new byte[0]);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not write " + stamp, e);
+        }
     }
 }

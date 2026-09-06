@@ -49,6 +49,12 @@ class VerifyModulesTest {
     }
 
     @Test
+    void acceptsAModuleWhosePackageOnlyResemblesTheRutterApi() throws IOException {
+        Path jar = jarContaining("nearmiss.jar", "io/github/intisy/rutter/apiextra/Foo.class");
+        ModuleJarInspector.verify("1.21.11", jar.toFile(), Collections.<String>emptyList());
+    }
+
+    @Test
     void rejectsAModuleThatShadowedTheRutterApi() throws IOException {
         Path jar = jarContaining("shadowed.jar",
                 "io/github/intisy/rutter/api/PlatformId.class");

@@ -20,7 +20,7 @@ final class ModuleJarInspector {
     }
 
     static void verify(String moduleName, File jar, List<String> declaredMixins) {
-        Set<String> entries = entries(jar);
+        Set<String> entries = entries(moduleName, jar);
         for (String mixin : declaredMixins) {
             if (!entries.contains(mixin)) {
                 throw new InvalidUserDataException("Rutter module '" + moduleName + "' declares the"
@@ -42,7 +42,7 @@ final class ModuleJarInspector {
         }
     }
 
-    private static Set<String> entries(File jar) {
+    private static Set<String> entries(String moduleName, File jar) {
         Set<String> names = new LinkedHashSet<String>();
         try {
             JarFile file = new JarFile(jar);
@@ -55,7 +55,8 @@ final class ModuleJarInspector {
                 file.close();
             }
         } catch (IOException e) {
-            throw new UncheckedIOException("Could not read the module jar " + jar, e);
+            throw new UncheckedIOException("Rutter module '" + moduleName + "' has an unreadable jar "
+                    + jar + ". Make sure it is a real jar built before rutterVerifyModules runs.", e);
         }
         return names;
     }
