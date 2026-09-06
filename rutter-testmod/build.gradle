@@ -27,3 +27,42 @@ moduleIds.each { id ->
 tasks.register('moduleJars') {
     dependsOn moduleIds.collect { "moduleJar${it.replace('.', '')}" }
 }
+
+tasks.register('universalJar', Jar) {
+    dependsOn tasks.named('moduleJars')
+    archiveFileName = 'rutter-testmod-universal.jar'
+    destinationDirectory = layout.buildDirectory.dir('universal')
+
+    from project(':rutter-api').sourceSets.main.output
+    from project(':rutter-core').sourceSets.main.output
+    from project(':rutter-bootstrap-fabric').sourceSets.main.output
+
+    from(layout.buildDirectory.dir('modules')) { into 'modules' }
+
+    from(resources.text.fromString('''
+module.0.path=modules/testmod-1.21.11.jar
+module.0.platforms=FABRIC
+module.0.minecraft=1.21.11
+module.0.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
+module.1.path=modules/testmod-1.21.10.jar
+module.1.platforms=FABRIC
+module.1.minecraft=1.21.10
+module.1.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
+'''.trim())) {
+        rename '.*', 'rutter-modules.properties'
+    }
+
+    from(resources.text.fromString('''
+{
+  "schemaVersion": 1,
+  "id": "rutter_testmod",
+  "version": "0.1.0",
+  "name": "Rutter Test Mod",
+  "environment": "*",
+  "entrypoints": { "preLaunch": ["io.github.intisy.rutter.bootstrap.fabric.RutterPreLaunch"] },
+  "depends": { "fabricloader": ">=0.14.0" }
+}
+'''.trim())) {
+        rename '.*', 'fabric.mod.json'
+    }
+}

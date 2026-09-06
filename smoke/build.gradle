@@ -1,7 +1,87 @@
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+
 dependencies {
     testImplementation project(':rutter-api')
 }
 
+def serversDir = layout.buildDirectory.dir('servers')
+
+/**
+ * @implNote Minecraft 1.21.x needs Java 21; the ambient PATH "java" that runs this task's own
+ * actions is whatever launched the Gradle daemon, not necessarily the project's toolchain, so the
+ * pre-download launch below asks for the toolchain launcher explicitly rather than trusting PATH.
+ */
+def java21 = javaToolchains.launcherFor {
+    languageVersion = JavaLanguageVersion.of(21)
+}
+
+tasks.register('provisionFabricServers') {
+    onlyIf { project.hasProperty('rutterSmoke') } // dependants' onlyIf does not gate a dependency's own execution
+    dependsOn ':rutter-testmod:universalJar'
+    doLast {
+        String javaExecutable = java21.get().executablePath.asFile.absolutePath
+        ['1.21.11', '1.21.10'].each { mcVersion ->
+            File dir = serversDir.get().dir("fabric-${mcVersion}").asFile
+            dir.mkdirs()
+            File launcher = new File(dir, 'fabric-server-launch.jar')
+            if (!launcher.exists()) {
+                String url = "https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/0.16.9/1.0.1/server/jar"
+                launcher.withOutputStream { out -> new URL(url).withInputStream { out << it } }
+            }
+            new File(dir, 'mods').mkdirs()
+            copy {
+                from project(':rutter-testmod').layout.buildDirectory.file('universal/rutter-testmod-universal.jar')
+                into new File(dir, 'mods')
+            }
+            new File(dir, 'eula.txt').text = 'eula=true\n'
+
+            predownloadServerJar(dir, mcVersion, javaExecutable)
+        }
+    }
+}
+
+/**
+ * @implNote The Fabric server launcher fetches the vanilla server jar on its first launch. Doing
+ * that inside the timed smoke run would race the harness's timeout against a large download, so
+ * provisioning launches the server once itself here and stops it once boot completes.
+ */
+def predownloadServerJar(File dir, String mcVersion, String javaExecutable) {
+    File librariesDir = new File(dir, 'libraries')
+    if (librariesDir.directory && librariesDir.list()?.length > 0) {
+        return
+    }
+    File log = new File(dir, 'provision.log')
+    Process process = new ProcessBuilder([javaExecutable, '-jar', 'fabric-server-launch.jar', 'nogui'])
+            .directory(dir)
+            .redirectErrorStream(true)
+            .redirectOutput(log)
+            .start()
+    try {
+        long deadline = System.nanoTime() + java.time.Duration.ofMinutes(5).toNanos()
+        boolean ready = false
+        while (System.nanoTime() < deadline) {
+            if (log.exists() && log.text.contains('Done (')) {
+                ready = true
+                break
+            }
+            if (!process.alive) {
+                break
+            }
+            Thread.sleep(500)
+        }
+        if (!ready) {
+            String captured = log.exists() ? log.text : '(no log)'
+            throw new GradleException("Fabric ${mcVersion} pre-download did not complete. Log:\n${captured}")
+        }
+    } finally {
+        process.destroyForcibly()
+        process.waitFor()
+    }
+}
+
 tasks.named('test') {
     onlyIf { project.hasProperty('rutterSmoke') } // opt-in: downloads loader installers and launches servers
+    dependsOn tasks.named('provisionFabricServers')
+    systemProperty 'rutter.smoke.servers', serversDir.get().asFile.absolutePath
+    javaLauncher = java21
 }
