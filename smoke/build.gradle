@@ -91,14 +91,109 @@ def predownloadServerJar(File dir, String mcVersion, String javaExecutable) {
 }
 
 /**
- * @implNote onlyIf gates a task's own action, never an edge; adding this dependsOn only under the
- * same condition keeps an ungated build from ever putting provisionFabricServers, or its
- * universalJar dependency, into the task graph at all.
+ * @implNote The Forge 1.7.10 installer's {@code --installServer} run downloads the vanilla server
+ * jar and every Forge library, which would race the harness's timeout if done inside the timed
+ * smoke run. Provisioning runs it once here and fails with the captured log if it does not
+ * complete, so the smoke test itself only ever launches an already-installed server.
+ */
+tasks.register('provisionForge1710') {
+    onlyIf { project.hasProperty('rutterSmoke') } // dependants' onlyIf does not gate a dependency's own execution
+    dependsOn ':rutter-testmod:universalJar'
+    doLast {
+        String forgeVersion = '1.7.10-10.13.4.1614-1.7.10'
+        String installerUrl = "https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/forge-${forgeVersion}-installer.jar"
+        File dir = serversDir.get().dir('forge-1.7.10').asFile
+        dir.mkdirs()
+        File serverJar = new File(dir, 'forge-server.jar')
+        if (!serverJar.exists()) {
+            File installer = new File(dir, 'forge-installer.jar')
+            installer.withOutputStream { out -> new URL(installerUrl).withInputStream { out << it } }
+            installForgeServer(dir, installer, java8.get().executablePath.asFile.absolutePath)
+            File universal = new File(dir, "forge-${forgeVersion}-universal.jar")
+            if (!universal.isFile()) {
+                throw new GradleException("Forge installer did not produce ${universal}")
+            }
+            File mixinJar = resolveMixinJar()
+            File mixinCopy = new File(dir, mixinJar.name)
+            mixinCopy.bytes = mixinJar.bytes
+            buildForgeServerLauncher(universal, mixinCopy, serverJar)
+        }
+        File modsDir = new File(dir, 'mods')
+        modsDir.mkdirs()
+        copy {
+            from project(':rutter-testmod').layout.buildDirectory.file('universal/rutter-testmod-universal.jar')
+            into modsDir
+        }
+        new File(dir, 'eula.txt').text = 'eula=true\n'
+    }
+}
+
+def resolveMixinJar() {
+    project.configurations.detachedConfiguration(
+            project.dependencies.create('org.spongepowered:mixin:0.8.7')
+    ).resolve().find { it.name.startsWith('mixin') }
+}
+
+/**
+ * @implNote Forge 1.7.10 predates ModLauncher and never bundles Mixin, so {@code RutterTweaker}'s
+ * {@code MixinBootstrap.init()} call needs Mixin on the server's classpath at runtime even though
+ * it is compileOnly for the bootstrap module. Rather than hand-editing the installed universal
+ * jar's own manifest, this writes a small launcher stub jar with the same Main-Class and a
+ * Class-Path that is the original jar's Class-Path plus the universal jar itself and Mixin, using
+ * {@link java.util.jar.Manifest#write} so the 72-byte continuation-line wrapping the jar spec
+ * requires is handled correctly rather than reimplemented by hand.
+ */
+def buildForgeServerLauncher(File originalUniversal, File mixinJar, File serverJar) {
+    String originalClassPath
+    new java.util.jar.JarFile(originalUniversal).withCloseable { jar ->
+        originalClassPath = jar.manifest.mainAttributes.getValue('Class-Path')
+    }
+    java.util.jar.Manifest manifest = new java.util.jar.Manifest()
+    java.util.jar.Attributes attributes = manifest.mainAttributes
+    attributes.putValue('Manifest-Version', '1.0')
+    attributes.putValue('Main-Class', 'cpw.mods.fml.relauncher.ServerLaunchWrapper')
+    attributes.putValue('Class-Path', "${originalClassPath} ${originalUniversal.name} ${mixinJar.name}")
+    serverJar.withOutputStream { out ->
+        new java.util.jar.JarOutputStream(out, manifest).close()
+    }
+}
+
+/**
+ * @implNote {@code --installServer} is a self-terminating process, unlike the Fabric server it
+ * runs itself to completion rather than needing a log-based readiness poll; a non-zero exit or a
+ * timeout is reported with the captured log so a stalled download is a clear provisioning failure
+ * rather than a smoke test timeout.
+ */
+def installForgeServer(File dir, File installer, String javaExecutable) {
+    File log = new File(dir, 'provision.log')
+    Process process = new ProcessBuilder([javaExecutable, '-jar', installer.name, '--installServer'])
+            .directory(dir)
+            .redirectErrorStream(true)
+            .redirectOutput(log)
+            .start()
+    boolean completed = process.waitFor(10, java.util.concurrent.TimeUnit.MINUTES)
+    if (!completed) {
+        process.destroyForcibly()
+        process.waitFor()
+        String captured = log.exists() ? log.text : '(no log)'
+        throw new GradleException("Forge 1.7.10 installer did not complete within 10 minutes. Log:\n${captured}")
+    }
+    if (process.exitValue() != 0) {
+        String captured = log.exists() ? log.text : '(no log)'
+        throw new GradleException("Forge 1.7.10 installer exited with code ${process.exitValue()}. Log:\n${captured}")
+    }
+}
+
+/**
+ * @implNote onlyIf gates a task's own action, never an edge; adding these dependsOn calls only
+ * under the same condition keeps an ungated build from ever putting either provisioning task, or
+ * its universalJar dependency, into the task graph at all.
  */
 def gateProvisioningIntoSmokeTest() {
     if (project.hasProperty('rutterSmoke')) {
         tasks.named('test') {
             dependsOn tasks.named('provisionFabricServers')
+            dependsOn tasks.named('provisionForge1710')
         }
     }
 }

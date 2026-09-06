@@ -36,6 +36,11 @@ tasks.register('universalJar', Jar) {
     from project(':rutter-api').sourceSets.main.output
     from project(':rutter-core').sourceSets.main.output
     from project(':rutter-bootstrap-fabric').sourceSets.main.output
+    from project(':rutter-bootstrap-launchwrapper').sourceSets.main.output
+
+    manifest {
+        attributes 'TweakClass': 'io.github.intisy.rutter.bootstrap.launchwrapper.RutterTweaker'
+    }
 
     from(layout.buildDirectory.dir('modules')) { into 'modules' }
 
@@ -48,6 +53,10 @@ module.1.path=modules/testmod-1.21.10.jar
 module.1.platforms=FABRIC
 module.1.minecraft=1.21.10
 module.1.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
+module.2.path=modules/testmod-1.7.10.jar
+module.2.platforms=LAUNCHWRAPPER
+module.2.minecraft=[1.7,1.12.2]
+module.2.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
 '''.trim())) {
         rename '.*', 'rutter-modules.properties'
     }
