@@ -1,8 +1,18 @@
 dependencies {
     implementation project(':rutter-api')
+    compileOnly 'org.spongepowered:mixin:0.8.7'
 }
 
-def moduleIds = ['1.21.11', '1.21.10', '1.16.5', '1.7.10']
+/**
+ * @implNote RutterMl9SmokeMixin's {@code @Mixin(targets = "...")} needs no refmap, but Sponge
+ * Mixin's annotation processor still auto-activates from the dependency and crashes without gson
+ * on the processor path; skipping annotation processing avoids pulling that in for one smoke-test mixin.
+ */
+tasks.named('compileJava') {
+    options.compilerArgs << '-proc:none'
+}
+
+def moduleIds = ['1.21.11', '1.21.10', '1.16.5', '1.7.10', '1.21.11-ml9']
 
 moduleIds.each { id ->
     def safeId = id.replace('.', '')
@@ -21,6 +31,19 @@ moduleIds.each { id ->
         from sourceSets.main.output
         from(idFile)
         dependsOn generateModuleId
+        if (id == '1.21.11-ml9') {
+            from(resources.text.fromString('''
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "io.github.intisy.rutter.testmod.mixin",
+  "target": "DEFAULT",
+  "mixins": ["RutterMl9SmokeMixin"]
+}
+'''.trim())) {
+                rename '.*', 'mixins.rutter-testmod-ml9.json'
+            }
+        }
     }
 }
 
@@ -38,6 +61,7 @@ tasks.register('universalJar', Jar) {
     from project(':rutter-bootstrap-fabric').sourceSets.main.output
     from project(':rutter-bootstrap-launchwrapper').sourceSets.main.output
     from project(':rutter-bootstrap-modlauncher8').sourceSets.main.output
+    from project(':rutter-bootstrap-modlauncher9').sourceSets.main.output
 
     manifest {
         attributes 'TweakClass': 'io.github.intisy.rutter.bootstrap.launchwrapper.RutterTweaker'
@@ -62,14 +86,27 @@ module.3.path=modules/testmod-1.16.5.jar
 module.3.platforms=MODLAUNCHER_8
 module.3.minecraft=[1.13,1.16.5]
 module.3.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
+module.4.path=modules/testmod-1.21.11-ml9.jar
+module.4.platforms=MODLAUNCHER_9
+module.4.minecraft=1.21.11
+module.4.mixins=mixins.rutter-testmod-ml9.json
+module.4.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
 '''.trim())) {
         rename '.*', 'rutter-modules.properties'
     }
 
-    from(resources.text.fromString(
-            'io.github.intisy.rutter.bootstrap.ml8.RutterMl8Service\n')) {
+    from(resources.text.fromString('''
+io.github.intisy.rutter.bootstrap.ml8.RutterMl8Service
+io.github.intisy.rutter.bootstrap.ml9.RutterMl9TransformationService
+'''.trim() + '\n')) {
         into 'META-INF/services'
         rename '.*', 'cpw.mods.modlauncher.api.ITransformationService'
+    }
+
+    from(resources.text.fromString(
+            'io.github.intisy.rutter.bootstrap.ml9.RutterMl9LaunchPlugin\n')) {
+        into 'META-INF/services'
+        rename '.*', 'cpw.mods.modlauncher.serviceapi.ILaunchPluginService'
     }
 
     from(resources.text.fromString('''

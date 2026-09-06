@@ -165,6 +165,41 @@ tasks.register('provisionForge1165') {
     }
 }
 
+/**
+ * @implNote Forge 1.21.11's own shim declares Java-Version=21, unlike 1.16.5 and 1.7.10, so both the
+ * installer run and the eventual smoke launch use the Java 21 toolchain rather than Java 8.
+ * @implNote ModLauncher 9+'s {@code ILaunchPluginService} is discovered only from the boot module
+ * layer that ForgeBootstrap builds from the literal JVM classpath, not from Forge's own mods/ folder
+ * scanning (verified empirically; the spike did not need a second service to hit this). The universal
+ * jar is therefore copied next to the installed shim rather than into mods/, and
+ * {@code ModLauncher9SmokeTest} launches it with an explicit -cp plus the shim's main class instead
+ * of -jar.
+ */
+tasks.register('provisionForge12111') {
+    onlyIf { project.hasProperty('rutterSmoke') } // dependants' onlyIf does not gate a dependency's own execution
+    dependsOn ':rutter-testmod:universalJar'
+    doLast {
+        String forgeVersion = '1.21.11-61.1.5'
+        String installerUrl = "https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/forge-${forgeVersion}-installer.jar"
+        File dir = serversDir.get().dir('forge-1.21.11').asFile
+        dir.mkdirs()
+        File shimJar = new File(dir, "forge-${forgeVersion}-shim.jar")
+        if (!shimJar.isFile()) {
+            File installer = new File(dir, 'forge-installer.jar')
+            installer.withOutputStream { out -> new URL(installerUrl).withInputStream { out << it } }
+            installForgeServer(dir, installer, java21.get().executablePath.asFile.absolutePath)
+            if (!shimJar.isFile()) {
+                throw new GradleException("Forge installer did not produce ${shimJar}")
+            }
+        }
+        copy {
+            from project(':rutter-testmod').layout.buildDirectory.file('universal/rutter-testmod-universal.jar')
+            into dir
+        }
+        new File(dir, 'eula.txt').text = 'eula=true\n'
+    }
+}
+
 def resolveMixinJar() {
     project.configurations.detachedConfiguration(
             project.dependencies.create('org.spongepowered:mixin:0.8.7')
@@ -232,6 +267,7 @@ def gateProvisioningIntoSmokeTest() {
             dependsOn tasks.named('provisionFabricServers')
             dependsOn tasks.named('provisionForge1710')
             dependsOn tasks.named('provisionForge1165')
+            dependsOn tasks.named('provisionForge12111')
         }
     }
 }

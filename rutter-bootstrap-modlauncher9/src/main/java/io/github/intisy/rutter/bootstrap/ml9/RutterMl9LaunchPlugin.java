@@ -1,0 +1,55 @@
+package io.github.intisy.rutter.bootstrap.ml9;
+
+import cpw.mods.modlauncher.api.NamedPath;
+import cpw.mods.modlauncher.serviceapi.ILaunchPluginService;
+import org.objectweb.asm.Type;
+
+import java.util.EnumSet;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * @implNote Shares a jar with {@link RutterMl9TransformationService}, so this also no-ops on
+ * ModLauncher 8, where {@link Ml9Bridge#platform} is never set because that service's own generation
+ * check never runs {@code RutterKernel.boot}.
+ * @implNote This is the earliest point at which the module injected in {@code beginScanning}
+ * becomes loadable; see the spike doc, Finding 4.
+ */
+public final class RutterMl9LaunchPlugin implements ILaunchPluginService {
+
+    private final AtomicBoolean activated = new AtomicBoolean();
+
+    @Override
+    public String name() {
+        return "rutter-ml9-plugin";
+    }
+
+    @Override
+    public EnumSet<Phase> handlesClass(Type classType, boolean isEmpty) {
+        return EnumSet.noneOf(Phase.class);
+    }
+
+    /**
+     * @implNote ModLauncher 10.2.4 added the one-argument {@code initializeLaunch} and deprecated
+     * this two-argument form for removal, but the spike observed 10.2.4 still invoking both when
+     * both are overridden; ModLauncher 10.0.9 (Forge 1.17 to 1.20.x) declares only this form.
+     * Overriding it alone therefore covers the whole ModLauncher 9+ range without needing to guess
+     * which arity a given Forge version will call; {@link #activated} makes a duplicate call from a
+     * newer ModLauncher harmless. See the spike doc's coverage table.
+     */
+    @Override
+    public void initializeLaunch(ITransformerLoader transformerLoader, NamedPath[] namedPaths) {
+        activate();
+    }
+
+    private void activate() {
+        if (!activated.compareAndSet(false, true)) {
+            return;
+        }
+        Ml9Platform platform = Ml9Bridge.platform;
+        if (platform == null) {
+            return;
+        }
+        platform.activate(Ml9Bridge.moduleLayerManager);
+        System.out.println("[Rutter] booted " + Ml9Bridge.module);
+    }
+}

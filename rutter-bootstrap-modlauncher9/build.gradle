@@ -1,0 +1,17 @@
+import org.gradle.api.attributes.java.TargetJvmVersion
+
+dependencies {
+    implementation project(':rutter-core')
+    compileOnly 'net.minecraftforge:modlauncher:10.2.4'
+    compileOnly 'net.minecraftforge:securemodules:2.2.24'
+    compileOnly 'org.spongepowered:mixin:0.8.7'
+}
+
+// ModLauncher 10.2.4 publishes org.gradle.jvm.version = 16, which Gradle's variant resolution
+// refuses against this module's release-8 compileClasspath; the emitted bytecode stays release 8,
+// only the dependency-resolution attribute is raised. See the spike doc, Finding 1a.
+configurations.compileClasspath {
+    attributes {
+        attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 21)
+    }
+}
