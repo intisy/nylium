@@ -4,7 +4,6 @@ import io.github.intisy.rutter.gradle.ApiPurityTask
 
 tasks.register('checkApiPurity', ApiPurityTask) {
     jar = tasks.jar.archiveFile
-    dependsOn tasks.jar
 }
 
 tasks.named('check') {

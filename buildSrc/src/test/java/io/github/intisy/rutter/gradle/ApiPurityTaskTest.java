@@ -10,9 +10,15 @@ import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -50,6 +56,18 @@ class ApiPurityTaskTest {
         Files.createDirectories(file.getParent());
         Files.write(file, source.getBytes("UTF-8"));
         return file;
+    }
+
+    private static Path buildJar(Path dir, Map<String, byte[]> entries) throws Exception {
+        Path jarPath = dir.resolve("test.jar");
+        try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(jarPath))) {
+            for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+                jar.putNextEntry(new JarEntry(entry.getKey()));
+                jar.write(entry.getValue());
+                jar.closeEntry();
+            }
+        }
+        return jarPath;
     }
 
     @Test
@@ -95,7 +113,7 @@ class ApiPurityTaskTest {
                         + "public class LeakyGeneric { public List<net.minecraft.Level> levels() { return null; } }");
         Path out = compile(dir, level, leakyGeneric);
 
-        assertTrue(!ApiPurityScanner.scan(Files.readAllBytes(out.resolve("LeakyGeneric.class"))).isEmpty());
+        assertFalse(ApiPurityScanner.scan(Files.readAllBytes(out.resolve("LeakyGeneric.class"))).isEmpty());
     }
 
     @Test
@@ -117,6 +135,97 @@ class ApiPurityTaskTest {
                 "public class LeakyThrows { public void doThing() throws net.minecraft.Level {} }");
         Path out = compile(dir, level, leakyThrows);
 
-        assertTrue(!ApiPurityScanner.scan(Files.readAllBytes(out.resolve("LeakyThrows.class"))).isEmpty());
+        assertFalse(ApiPurityScanner.scan(Files.readAllBytes(out.resolve("LeakyThrows.class"))).isEmpty());
+    }
+
+    @Test
+    void rejectsAMinecraftAnnotationOnAPublicMethod(@TempDir Path dir) throws Exception {
+        Path annotation = writeSource(dir, "net/minecraft/MinecraftAnnotation.java",
+                "package net.minecraft; public @interface MinecraftAnnotation {}");
+        Path annotatedMethod = writeSource(dir, "AnnotatedMethod.java",
+                "public class AnnotatedMethod { @net.minecraft.MinecraftAnnotation public void doThing() {} }");
+        Path out = compile(dir, annotation, annotatedMethod);
+
+        assertFalse(ApiPurityScanner.scan(Files.readAllBytes(out.resolve("AnnotatedMethod.class"))).isEmpty());
+    }
+
+    @Test
+    void rejectsAMinecraftAnnotationOnAPublicField(@TempDir Path dir) throws Exception {
+        Path annotation = writeSource(dir, "net/minecraft/MinecraftAnnotation.java",
+                "package net.minecraft; public @interface MinecraftAnnotation {}");
+        Path annotatedField = writeSource(dir, "AnnotatedField.java",
+                "public class AnnotatedField { @net.minecraft.MinecraftAnnotation public int value; }");
+        Path out = compile(dir, annotation, annotatedField);
+
+        assertFalse(ApiPurityScanner.scan(Files.readAllBytes(out.resolve("AnnotatedField.class"))).isEmpty());
+    }
+
+    @Test
+    void ignoresNonPublicClassSupertype(@TempDir Path dir) throws Exception {
+        Path level = writeSource(dir, "net/minecraft/Level.java",
+                "package net.minecraft; public class Level {}");
+        Path packagePrivate = writeSource(dir, "PackagePrivateLeaky.java",
+                "class PackagePrivateLeaky extends net.minecraft.Level {}");
+        Path out = compile(dir, level, packagePrivate);
+
+        assertTrue(ApiPurityScanner.scan(Files.readAllBytes(out.resolve("PackagePrivateLeaky.class"))).isEmpty());
+    }
+
+    @Test
+    void jarScanFindsNoIssuesInACleanJar(@TempDir Path dir) throws Exception {
+        Path source = writeSource(dir, "Clean.java",
+                "public class Clean { public String hello() { return \"hi\"; } }");
+        Path out = compile(dir, source);
+        Path jar = buildJar(dir, Collections.singletonMap("Clean.class",
+                Files.readAllBytes(out.resolve("Clean.class"))));
+
+        assertTrue(ApiPurityScanner.scan(jar).isEmpty());
+    }
+
+    @Test
+    void jarScanFindsTheLeakInsideAJar(@TempDir Path dir) throws Exception {
+        Path level = writeSource(dir, "net/minecraft/Level.java",
+                "package net.minecraft; public class Level {}");
+        Path leaky = writeSource(dir, "Leaky.java",
+                "public class Leaky { public net.minecraft.Level level() { return null; } }");
+        Path out = compile(dir, level, leaky);
+        Path jar = buildJar(dir, Collections.singletonMap("Leaky.class",
+                Files.readAllBytes(out.resolve("Leaky.class"))));
+
+        List<String> findings = ApiPurityScanner.scan(jar);
+
+        assertEquals(1, findings.size(), findings.toString());
+        assertTrue(findings.get(0).contains("level"), findings.toString());
+    }
+
+    @Test
+    void jarScanIgnoresNonClassEntries(@TempDir Path dir) throws Exception {
+        Path source = writeSource(dir, "Clean.java",
+                "public class Clean { public String hello() { return \"hi\"; } }");
+        Path out = compile(dir, source);
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n".getBytes("UTF-8"));
+        entries.put("Clean.class", Files.readAllBytes(out.resolve("Clean.class")));
+        entries.put("some/resource.txt", "not a class file".getBytes("UTF-8"));
+        Path jar = buildJar(dir, entries);
+
+        assertTrue(ApiPurityScanner.scan(jar).isEmpty());
+    }
+
+    @Test
+    void jarScanOnAnEmptyJarFindsNothing(@TempDir Path dir) throws Exception {
+        Path jar = buildJar(dir, Collections.emptyMap());
+
+        assertTrue(ApiPurityScanner.scan(jar).isEmpty());
+    }
+
+    @Test
+    void jarScanOnAClassWithNoMembersFindsNothing(@TempDir Path dir) throws Exception {
+        Path source = writeSource(dir, "Empty.java", "public class Empty {}");
+        Path out = compile(dir, source);
+        Path jar = buildJar(dir, Collections.singletonMap("Empty.class",
+                Files.readAllBytes(out.resolve("Empty.class"))));
+
+        assertTrue(ApiPurityScanner.scan(jar).isEmpty());
     }
 }
