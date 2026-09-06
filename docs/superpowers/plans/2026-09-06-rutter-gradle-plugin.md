@@ -1100,6 +1100,14 @@ class FabricMetadataRendererTest {
 }
 ```
 
+Add two more cases, because otherwise each of these tests can pass while the document is wrong in a
+way it does not look at. `omitsTheMinecraftDependencyByDefault` asserts only that `minecraft` is
+absent, so assert separately that `depends.fabricloader` is present and defaults to `>=0.14.0`. And
+only the quote path of `Json.quote` is exercised, so add a case whose `description` contains a
+backslash and a newline, asserting the value survives a gson round trip unchanged; that proves the
+escaping emits valid JSON and preserves the value, rather than merely that some escape sequence
+appears.
+
 - [ ] **Step 2: Run and watch them fail**
 
 Run: `./gradlew :rutter-gradle:test --tests '*Renderer*' --offline`
