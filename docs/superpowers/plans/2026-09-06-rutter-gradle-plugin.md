@@ -1361,26 +1361,27 @@ public class RutterPlugin implements Plugin<Project> {
             List<ResolvedModule> modules = rutter.resolve();
             Set<PlatformId> platforms = platformUnion(modules);
 
-            metadata.configure(task -> task.dependsOn(writer(evaluated, "rutterManifest",
-                    ModuleManifest.RESOURCE, ManifestRenderer.render(modules))));
-
+            List<TaskProvider<RutterTextFileTask>> writers =
+                    new java.util.ArrayList<TaskProvider<RutterTextFileTask>>();
+            writers.add(writer(evaluated, "rutterManifest", ModuleManifest.RESOURCE,
+                    ManifestRenderer.render(modules)));
             if (platforms.contains(PlatformId.FABRIC)) {
-                metadata.configure(task -> task.dependsOn(writer(evaluated, "rutterFabricModJson",
-                        "fabric.mod.json", FabricMetadataRenderer.render(rutter.getMod()))));
+                writers.add(writer(evaluated, "rutterFabricModJson", "fabric.mod.json",
+                        FabricMetadataRenderer.render(rutter.getMod())));
             }
             String services = ServiceRenderer.transformationServices(platforms);
             if (services != null) {
-                metadata.configure(task -> task.dependsOn(writer(evaluated,
-                        "rutterTransformationServices",
+                writers.add(writer(evaluated, "rutterTransformationServices",
                         "META-INF/services/cpw.mods.modlauncher.api.ITransformationService",
-                        services)));
+                        services));
             }
             String launchPlugins = ServiceRenderer.launchPlugins(platforms);
             if (launchPlugins != null) {
-                metadata.configure(task -> task.dependsOn(writer(evaluated, "rutterLaunchPlugins",
+                writers.add(writer(evaluated, "rutterLaunchPlugins",
                         "META-INF/services/cpw.mods.modlauncher.serviceapi.ILaunchPluginService",
-                        launchPlugins)));
+                        launchPlugins));
             }
+            metadata.configure(task -> task.dependsOn(writers));
         });
     }
 
