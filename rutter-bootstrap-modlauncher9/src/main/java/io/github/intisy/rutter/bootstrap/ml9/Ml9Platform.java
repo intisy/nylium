@@ -128,6 +128,11 @@ final class Ml9Platform implements Platform {
      * spike doc, Finding 1b.
      */
     void activate(IModuleLayerManager manager) {
+        if (manager == null) {
+            throw new RutterException("No IModuleLayerManager was captured before initializeLaunch, "
+                    + "so the GAME layer cannot be resolved; completeScan never ran on "
+                    + "RutterMl9TransformationService.");
+        }
         try {
             Method getLayer = IModuleLayerManager.class.getMethod("getLayer", IModuleLayerManager.Layer.class);
             Object layerOptional = getLayer.invoke(manager, IModuleLayerManager.Layer.GAME);

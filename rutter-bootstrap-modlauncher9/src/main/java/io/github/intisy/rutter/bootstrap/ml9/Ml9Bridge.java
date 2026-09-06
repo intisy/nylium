@@ -17,4 +17,5 @@ final class Ml9Bridge {
     static volatile Ml9Platform platform;
     static volatile IModuleLayerManager moduleLayerManager;
     static volatile ModuleDescriptor module;
+    static volatile boolean activated;
 }

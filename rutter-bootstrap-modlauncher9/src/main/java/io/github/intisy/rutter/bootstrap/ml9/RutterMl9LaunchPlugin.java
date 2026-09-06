@@ -50,9 +50,15 @@ public final class RutterMl9LaunchPlugin implements ILaunchPluginService {
         }
         Ml9Platform platform = Ml9Bridge.platform;
         if (platform == null) {
+            System.err.println("[Rutter] WARNING: ModLauncher reached initializeLaunch without "
+                    + "RutterMl9TransformationService ever booting the kernel, so no module was "
+                    + "loaded. That service is listed in the same jar's "
+                    + "META-INF/services/cpw.mods.modlauncher.api.ITransformationService; if it is "
+                    + "missing or was never discovered, nothing else will report it.");
             return;
         }
         platform.activate(Ml9Bridge.moduleLayerManager);
+        Ml9Bridge.activated = true;
         System.out.println("[Rutter] booted " + Ml9Bridge.module);
     }
 

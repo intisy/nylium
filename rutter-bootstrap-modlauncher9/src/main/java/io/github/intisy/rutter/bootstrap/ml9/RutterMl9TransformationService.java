@@ -49,12 +49,39 @@ public final class RutterMl9TransformationService implements ITransformationServ
                 created,
                 RutterMl9TransformationService.class.getClassLoader(),
                 Paths.get(".").resolve("rutter").resolve("cache"));
+        watchForALaunchThatNeverActivates();
+    }
+
+    /**
+     * @implNote {@link RutterMl9LaunchPlugin} is the only place activation can happen, and a launch
+     * plugin cannot be discovered from {@code mods/} on this generation, so a jar installed there
+     * boots the kernel from this service and then goes quiet forever. This is the same shape of
+     * backstop {@code RutterTweaker} uses on LaunchWrapper: without it, the documented deployment
+     * limitation looks like a module that simply did nothing.
+     */
+    private static void watchForALaunchThatNeverActivates() {
+        Runtime.getRuntime().addShutdownHook(new Thread("rutter-ml9-activation-watchdog") {
+            @Override
+            public void run() {
+                if (!Ml9Bridge.activated) {
+                    System.err.println("[Rutter] WARNING: shutting down without ever activating "
+                            + Ml9Bridge.module + "; RutterMl9LaunchPlugin.initializeLaunch never "
+                            + "ran. ModLauncher 9+ discovers an ILaunchPluginService only from its "
+                            + "boot module layer, so a jar dropped into mods/ reaches this service "
+                            + "but never that plugin, and the module's mixin configs and entrypoint "
+                            + "are never registered. Put the jar on the launch classpath instead.");
+                }
+            }
+        });
     }
 
     @Override
     public List<Resource> beginScanning(IEnvironment environment) {
         Ml9Platform active = this.platform;
         if (active == null) {
+            System.err.println("[Rutter] WARNING: beginScanning ran without onLoad having booted "
+                    + "the kernel, so no module is offered into the GAME layer and nothing will "
+                    + "load.");
             return Collections.emptyList();
         }
         SecureJar jar = SecureJar.from(active.pendingModulePath());
