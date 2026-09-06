@@ -17,6 +17,10 @@ broke.
   work happens). Both are currently at the same commit; `development` was fast-forwarded into
   `master` at publish time.
 - CI: `Test` is green on both branches. `Smoke` and `Generate README` are `workflow_dispatch` only.
+- Licensed **Apache-2.0**. The choice is load-bearing: Nylium is shadowed into consumer mod jars, so
+  a copyleft license would be viral into every consuming mod and defeat the point. Apache-2.0 also
+  carries an explicit patent grant and is unambiguous about redistribution in binary form, which is
+  exactly what shadowing is.
 - Build: `./gradlew build --offline` is green with `:smoke:test SKIPPED`.
 - Smoke matrix: `./gradlew :smoke:test -PnyliumSmoke`, optionally `-PnyliumSmokeJar=<abs path>` to
   test a specific universal jar. **Add `--rerun-tasks`**: with unchanged inputs the task reports
@@ -120,9 +124,6 @@ before writing code against any API the plan names:
 
 ## Pending decisions that are the owner's, not an agent's
 
-- **There is no LICENSE file, and the repo is public.** With no license the default is "all rights
-  reserved", which contradicts the stated intent that other mods can use this. Pick one and add it.
-  Note Baritone is LGPL-3.0, but Nylium shares no code with it and is not bound to that choice.
 - The smoke matrix is a `workflow_dispatch`-only CI caller by design, not a per-push gate: it
   provisions four Minecraft servers. `.github/workflows/smoke.yml`.
 - **Retire `nylium-testmod`'s hand-rolled `universalJar`?** The plugin reproduces it byte for byte,
