@@ -388,7 +388,7 @@ class ValidationTest {
 }
 ```
 
-Note that `NamedDomainObjectContainer` already rejects a duplicate name, so no test is needed for that; do not add a second uniqueness check in `resolve()`.
+Add one more test, `rejectsADuplicateModuleName`, declaring `module('1.21.11')` twice and asserting it throws. The container rejects the duplicate only because `module(...)` calls `create`; `maybeCreate` would merge both blocks into one spec silently. Do not add a second uniqueness check inside `resolve()`, and do not assume the rejection without asserting it.
 
 - [ ] **Step 2: Run and watch them fail**
 
@@ -648,8 +648,12 @@ public class RutterExtension {
         return mod;
     }
 
+    /**
+     * @implNote Creates rather than gets-or-creates, because {@code maybeCreate} would silently
+     *     merge two blocks that declare the same module name instead of rejecting them.
+     */
     public void module(String name, Action<? super ModuleSpec> action) {
-        action.execute(modules.maybeCreate(name));
+        action.execute(modules.create(name));
     }
 
     public NamedDomainObjectContainer<ModuleSpec> getModules() {
