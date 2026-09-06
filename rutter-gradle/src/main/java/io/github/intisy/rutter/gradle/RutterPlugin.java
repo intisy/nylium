@@ -6,12 +6,23 @@ import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.TaskProvider;
+import org.gradle.jvm.tasks.Jar;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 
 public class RutterPlugin implements Plugin<Project> {
@@ -54,7 +65,97 @@ public class RutterPlugin implements Plugin<Project> {
                         launchPlugins));
             }
             metadata.configure(task -> task.dependsOn(writers));
+
+            final Configuration embed = embedConfiguration(evaluated, platforms);
+            final boolean launchWrapper = platforms.contains(PlatformId.LAUNCHWRAPPER);
+
+            evaluated.getTasks().register("rutterUniversalJar", Jar.class, jar -> {
+                jar.setDescription("Assembles the Rutter universal jar.");
+                jar.getArchiveClassifier().set("universal");
+                jar.dependsOn(metadata);
+
+                jar.from(evaluated.provider(() -> {
+                    List<Object> trees = new ArrayList<Object>();
+                    for (File artifact : embed.getFiles()) {
+                        trees.add(evaluated.zipTree(artifact));
+                    }
+                    return trees;
+                }), copy -> copy.exclude("META-INF/MANIFEST.MF", "META-INF/*.SF",
+                        "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/maven/**",
+                        "module-info.class"));
+
+                jar.from(evaluated.getLayout().getBuildDirectory().dir("rutter"));
+
+                for (ResolvedModule module : modules) {
+                    final String path = module.path();
+                    jar.from(module.jar(), copy -> {
+                        copy.into(path.substring(0, path.lastIndexOf('/')));
+                        copy.rename(".*", path.substring(path.lastIndexOf('/') + 1));
+                    });
+                }
+
+                if (launchWrapper) {
+                    jar.getManifest().getAttributes().put("TweakClass",
+                            "io.github.intisy.rutter.bootstrap.launchwrapper.RutterTweaker");
+                }
+            });
         });
+    }
+
+    private static final Map<PlatformId, String> BOOTSTRAPS = bootstraps();
+
+    private static Map<PlatformId, String> bootstraps() {
+        Map<PlatformId, String> map = new EnumMap<PlatformId, String>(PlatformId.class);
+        map.put(PlatformId.FABRIC, "rutter-bootstrap-fabric");
+        map.put(PlatformId.LAUNCHWRAPPER, "rutter-bootstrap-launchwrapper");
+        map.put(PlatformId.MODLAUNCHER_8, "rutter-bootstrap-modlauncher8");
+        map.put(PlatformId.MODLAUNCHER_9, "rutter-bootstrap-modlauncher9");
+        return map;
+    }
+
+    private static Configuration embedConfiguration(Project project, Set<PlatformId> platforms) {
+        Configuration embed = project.getConfigurations().maybeCreate("rutterEmbed");
+        embed.setCanBeConsumed(false);
+        embed.setCanBeResolved(true);
+        String version = pluginVersion();
+        addEmbed(project, embed, "rutter-api", version);
+        addEmbed(project, embed, "rutter-core", version);
+        for (PlatformId platform : platforms) {
+            String artifact = BOOTSTRAPS.get(platform);
+            if (artifact == null) {
+                throw new InvalidUserDataException(
+                        "No Rutter bootstrap exists for platform " + platform + ".");
+            }
+            addEmbed(project, embed, artifact, version);
+        }
+        return embed;
+    }
+
+    private static void addEmbed(Project project, Configuration embed, String artifact,
+                                 String version) {
+        embed.getDependencies().add(project.getDependencies()
+                .create("io.github.intisy.rutter:" + artifact + ":" + version));
+    }
+
+    private static String pluginVersion() {
+        InputStream stream = RutterPlugin.class.getResourceAsStream(
+                "/rutter-gradle-version.properties");
+        if (stream == null) {
+            throw new IllegalStateException(
+                    "rutter-gradle-version.properties is missing from the plugin jar");
+        }
+        Properties properties = new Properties();
+        try {
+            properties.load(new InputStreamReader(stream, StandardCharsets.UTF_8));
+            stream.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        String version = properties.getProperty("version");
+        if (version == null || version.trim().isEmpty()) {
+            throw new IllegalStateException("rutter-gradle-version.properties declares no version");
+        }
+        return version.trim();
     }
 
     /**
