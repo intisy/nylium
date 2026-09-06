@@ -58,6 +58,10 @@ class ModLauncher9SmokeTest {
 
         assertEquals("mixin=applied", mixinResult);
 
+        if (!Files.isRegularFile(marker)) {
+            throw new AssertionError("The mixin marker was written but " + marker + " never was, so "
+                    + "the module's entrypoint did not run. Log:\n" + ServerSmokeHarness.log(server));
+        }
         String moduleResult = new String(Files.readAllBytes(marker), StandardCharsets.UTF_8).trim();
         assertEquals("module=1.21.11-ml9", moduleResult);
     }

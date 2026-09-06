@@ -46,6 +46,14 @@ public final class ServerSmokeHarness {
         }
     }
 
+    /**
+     * @implNote Exposed so a test asserting on a second marker can fail with the same captured log
+     *     the timeout path reports, rather than with a bare {@code NoSuchFileException}.
+     */
+    public static String log(Path serverDirectory) throws IOException {
+        return read(serverDirectory.resolve("smoke.log"));
+    }
+
     private static String read(Path log) throws IOException {
         return Files.isRegularFile(log)
                 ? new String(Files.readAllBytes(log), StandardCharsets.UTF_8)
