@@ -1,0 +1,20 @@
+dependencies {
+    implementation project(':rutter-api')
+}
+
+def moduleIds = ['1.21.11', '1.21.10', '1.16.5', '1.7.10']
+
+moduleIds.each { id ->
+    tasks.register("moduleJar${id.replace('.', '')}", Jar) {
+        archiveFileName = "testmod-${id}.jar"
+        destinationDirectory = layout.buildDirectory.dir('modules')
+        from sourceSets.main.output
+        from(resources.text.fromString(id).asFile()) {
+            rename '.*', 'rutter-testmod-id.txt'
+        }
+    }
+}
+
+tasks.register('moduleJars') {
+    dependsOn moduleIds.collect { "moduleJar${it.replace('.', '')}" }
+}

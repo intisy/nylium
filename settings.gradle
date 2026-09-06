@@ -12,3 +12,5 @@ rootProject.name = 'rutter'
 
 include 'rutter-api'
 include 'rutter-core'
+include 'rutter-testmod'
+include 'smoke'

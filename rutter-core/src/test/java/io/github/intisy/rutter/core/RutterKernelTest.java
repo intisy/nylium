@@ -161,4 +161,109 @@ class RutterKernelTest {
                     platform.registeredConfigs);
         }
     }
+
+    public static class RecordingEntrypoint {
+        static int invocations = 0;
+
+        public static void rutterInit() {
+            invocations++;
+        }
+    }
+
+    @Test
+    void invokesTheModuleEntrypointAfterMixinRegistration(@TempDir Path dir) throws Exception {
+        RecordingEntrypoint.invocations = 0;
+        String manifest = "module.0.path=modules/mod-1.21.11.jar\n"
+                + "module.0.platforms=FABRIC\n"
+                + "module.0.minecraft=1.21.11\n"
+                + "module.0.mixins=mixins.mod.json\n"
+                + "module.0.entrypoint=" + RecordingEntrypoint.class.getName() + "\n";
+        Path outer = dir.resolve("outer.jar");
+        try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(outer))) {
+            jar.putNextEntry(new JarEntry(ModuleManifest.RESOURCE));
+            jar.write(manifest.getBytes(StandardCharsets.UTF_8));
+            jar.closeEntry();
+            jar.putNextEntry(new JarEntry("modules/mod-1.21.11.jar"));
+            jar.write(tinyJar("newer"));
+            jar.closeEntry();
+        }
+        FakePlatform platform = new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11");
+
+        try (URLClassLoader source = new URLClassLoader(new URL[]{outer.toUri().toURL()},
+                getClass().getClassLoader())) {
+            RutterKernel.boot(platform, source, dir.resolve("cache"));
+
+            assertEquals(1, RecordingEntrypoint.invocations);
+            assertEquals("mixin:mixins.mod.json",
+                    platform.callOrder.get(platform.callOrder.size() - 1));
+        }
+    }
+
+    @Test
+    void aModuleWithoutAnEntrypointStillBoots(@TempDir Path dir) throws Exception {
+        FakePlatform platform = new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11");
+
+        try (URLClassLoader source = outerJar(dir)) {
+            assertEquals("modules/mod-1.21.11.jar",
+                    RutterKernel.boot(platform, source, dir.resolve("cache")).path());
+        }
+    }
+
+    @Test
+    void aBrokenEntrypointNamesTheClassAndTheModule(@TempDir Path dir) throws Exception {
+        String manifest = "module.0.path=modules/mod-1.21.11.jar\n"
+                + "module.0.platforms=FABRIC\n"
+                + "module.0.minecraft=1.21.11\n"
+                + "module.0.entrypoint=com.example.Absent\n";
+        Path outer = dir.resolve("outer.jar");
+        try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(outer))) {
+            jar.putNextEntry(new JarEntry(ModuleManifest.RESOURCE));
+            jar.write(manifest.getBytes(StandardCharsets.UTF_8));
+            jar.closeEntry();
+            jar.putNextEntry(new JarEntry("modules/mod-1.21.11.jar"));
+            jar.write(tinyJar("newer"));
+            jar.closeEntry();
+        }
+        FakePlatform platform = new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11");
+
+        try (URLClassLoader source = new URLClassLoader(new URL[]{outer.toUri().toURL()}, null)) {
+            io.github.intisy.rutter.api.RutterException thrown =
+                    assertThrows(io.github.intisy.rutter.api.RutterException.class,
+                            () -> RutterKernel.boot(platform, source, dir.resolve("cache")));
+            assertTrue(thrown.getMessage().contains("com.example.Absent"), thrown.getMessage());
+            assertTrue(thrown.getMessage().contains("modules/mod-1.21.11.jar"), thrown.getMessage());
+        }
+    }
+
+    @Test
+    void defersEntrypointInvocationUntilThePlatformSaysTheModuleIsLoadable(@TempDir Path dir) throws Exception {
+        RecordingEntrypoint.invocations = 0;
+        String manifest = "module.0.path=modules/mod-1.21.11.jar\n"
+                + "module.0.platforms=MODLAUNCHER_9\n"
+                + "module.0.minecraft=1.21.11\n"
+                + "module.0.mixins=mixins.mod.json\n"
+                + "module.0.entrypoint=" + RecordingEntrypoint.class.getName() + "\n";
+        Path outer = dir.resolve("outer.jar");
+        try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(outer))) {
+            jar.putNextEntry(new JarEntry(ModuleManifest.RESOURCE));
+            jar.write(manifest.getBytes(StandardCharsets.UTF_8));
+            jar.closeEntry();
+            jar.putNextEntry(new JarEntry("modules/mod-1.21.11.jar"));
+            jar.write(tinyJar("newer"));
+            jar.closeEntry();
+        }
+        DeferringFakePlatform platform =
+                new DeferringFakePlatform(PlatformId.MODLAUNCHER_9, Environment.CLIENT, "1.21.11");
+
+        try (URLClassLoader source = new URLClassLoader(new URL[]{outer.toUri().toURL()},
+                getClass().getClassLoader())) {
+            RutterKernel.boot(platform, source, dir.resolve("cache"));
+
+            assertEquals(0, RecordingEntrypoint.invocations);
+
+            platform.capturedActivation.run();
+
+            assertEquals(1, RecordingEntrypoint.invocations);
+        }
+    }
 }

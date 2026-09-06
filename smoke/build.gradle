@@ -1,0 +1,7 @@
+dependencies {
+    testImplementation project(':rutter-api')
+}
+
+tasks.named('test') {
+    onlyIf { project.hasProperty('rutterSmoke') } // opt-in: downloads loader installers and launches servers
+}

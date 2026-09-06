@@ -2,6 +2,7 @@ package io.github.intisy.rutter.core;
 
 import io.github.intisy.rutter.api.McVersion;
 import io.github.intisy.rutter.api.Platform;
+import io.github.intisy.rutter.api.RutterException;
 import io.github.intisy.rutter.core.probe.MarkerClassProbe;
 import io.github.intisy.rutter.core.probe.ProbeChain;
 import io.github.intisy.rutter.core.probe.VersionJsonProbe;
@@ -35,9 +36,20 @@ public final class RutterKernel {
                 for (String config : module.mixinConfigs()) {
                     platform.registerMixinConfig(config);
                 }
+                module.entrypoint().ifPresent(className ->
+                        invoke(className, module, platform.moduleClassLoader(source)));
             }
         });
         return module;
+    }
+
+    private static void invoke(String className, ModuleDescriptor module, ClassLoader loader) {
+        try {
+            Class.forName(className, true, loader).getMethod("rutterInit").invoke(null);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            throw new RutterException("Module '" + module.path() + "' names entrypoint '" + className
+                    + "', which could not be invoked. It needs a public static void rutterInit().", e);
+        }
     }
 
     private static List<VersionProbe> probes(Platform platform, ClassLoader source) {
