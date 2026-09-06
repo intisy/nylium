@@ -939,6 +939,8 @@ Add to `ManifestRendererTest`:
 
 This is the round trip that matters: the renderer's output is parsed by the same class the game uses, so a format drift fails here rather than at launch.
 
+Add two more round-trip cases, because otherwise no test executes the `environment` or non-zero `priority` emission branches at all, and those are exactly the values the reader rejects at launch rather than at build time. One module with a non-null `Environment`, one with a non-zero `priority`, each asserting the value survives the round trip: `ModuleDescriptor.environment()` returns an `Optional<Environment>` and `priority()` returns an `int`.
+
 Run: `./gradlew :rutter-gradle:test --tests '*ManifestRendererTest*' --offline`
 Expected: PASS.
 
