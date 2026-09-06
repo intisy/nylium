@@ -202,3 +202,49 @@ Per the program overview's ordering:
   its own `IModFileCandidateLocator`, behind its own spike.
 - **SP-1c** (implied, not yet specced) the ModLauncher 8 visibility spike from limitation (1).
 - **SP-4/SP-5** unified loader API and the Minecraft facade.
+
+## The duplication gap, and what it measures
+
+**Raised by the owner 2026-09-06: "using Nylium I want no duplicate code for the versions."**
+This is a real design limitation, not a packaging oversight, and it is the next thing to fix.
+
+`NyliumKernel.boot()` selects exactly ONE module, extracts it and classpaths it. There is no shared
+layer, so every module jar must be self-contained. A consumer targeting N Minecraft versions ships
+N complete copies of itself inside one universal jar. For Baritone at 18 targets that is 18 copies.
+
+**Measured on Baritone's two built Stonecutter nodes, not estimated:**
+
+| Measurement | Value |
+| --- | --- |
+| Shared source files | 354 |
+| Of those, referencing `net.minecraft` | 192 |
+| Of those, free of `net.minecraft` | 162 (46%) |
+| Compiled classes per version node | 261 |
+| **Byte-identical between 1.21.10 and 1.21.11** | **247 (94.6%)** |
+| Differing | 13 |
+| Present in only one | 1 |
+
+The 94.6% is the number that matters. Byte-identity beats a source-level "is it MC-free" split
+(46%) because most classes that *reference* Minecraft still compile identically when the symbols
+did not change between adjacent versions. Note the caveat: 1.21.10 and 1.21.11 are adjacent, so
+identity is unusually high; 1.16.5 against 1.21.11 would be far lower. The mechanism is still
+correct, the ratio just varies per pair.
+
+### Two candidate designs, not yet chosen
+
+1. **Content-addressed dedupe in the Gradle plugin.** Hash every class entry across the N module
+   jars; any class byte-identical in 2+ modules moves to a shared jar and each module keeps only
+   what is unique. Manifest gains `shared.N.*` entries; the kernel classpaths matching shared
+   layers before the selected module. Provably safe (identical bytes are identical semantics),
+   needs no consumer declaration, and reuses the ASM machinery already in `ApiPurityScanner`.
+   Unproven risks: mixin targets must still resolve when the target class lives in the shared
+   layer, and classloader order must let a module override a shared class. Both are checkable on
+   the existing five-server smoke matrix.
+2. **SP-5 Minecraft facade plus SP-4 unified loader API.** The deeper fix: Baritone's 192
+   MC-touching files are per-version *only* because they name `net.minecraft` types directly. A
+   facade would let one source compile once. Much larger, and it attacks duplicate SOURCE rather
+   than duplicate BYTECODE.
+
+These are complementary, not alternatives. (1) is self-contained, independently verifiable and
+blocked on nothing. (2) is the deeper answer and is a program in its own right. **The owner has not
+yet picked one.** Do not start either without settling that.
