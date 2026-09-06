@@ -105,15 +105,20 @@ generates it rather than merging the consumer's:
 - **`entrypoints.preLaunch`** is Rutter's, so the kernel boots before the game.
 - **No `mixins` block.** Per-version mixin configs live inside the module jar and are registered
   through `Platform.registerMixinConfig`. A config named in the outer jar would not be found there.
-- **`depends.minecraft` defaults to `"*"`**, overridable in `mod {}`.
+- **No `depends.minecraft` at all** by default, overridable in `mod {}` for a consumer who wants a
+  floor.
 
 That last default is the point of the exercise. Baritone's committed `fabric.mod.json` pins
 `"depends": {"minecraft": ["1.21.11"]}` and its `mods.toml` pins `versionRange="[1.21.11]"`; only
 `${version}` is expanded at build time, so those are hardcoded literals. A universal jar carrying
-either would be refused by the loader on every version but one. Defaulting to `"*"` also avoids
-computing a Fabric version predicate from a union of Rutter ranges, which would be a second version
-algebra and a place to be subtly wrong. When no module matches, dispatch fails with
-`NoCompatibleModuleException`, which names the problem better than a loader refusal does.
+either would be refused by the loader on every version but one.
+
+Omitting the key entirely, rather than emitting `"*"`, is deliberate on two counts: it is what the
+test mod proven on five servers actually ships, so the default reproduces a known-good artifact
+byte for byte; and it avoids computing a Fabric version predicate from a union of Rutter ranges,
+which would be a second version algebra and a place to be subtly wrong. The cost is that an
+out-of-range launch fails with `NoCompatibleModuleException` instead of a loader refusal, which
+names the problem better anyway.
 
 ### Metadata deliberately not generated
 
@@ -156,12 +161,21 @@ Three layers, ordered by how much they can actually catch:
    jar's entry set; then assert `UP-TO-DATE` on a second run and a genuine rebuild after a module
    changes.
 3. **Differential, against the known-good artifact.** Rebuild `rutter-testmod`'s universal jar
-   through the plugin, require its entry set to match the hand-rolled jar's, and then run the
-   existing, already-green four-backend smoke matrix against the plugin-built jar.
+   through the plugin and require it to match the hand-rolled jar: identical entry set, identical
+   bytes for every generated metadata file, identical bytes for each embedded module jar.
+
+`rutter-gradle` stays an ordinary subproject and the fixture applies the plugin through TestKit's
+`withPluginClasspath()`. That is TestKit's intended mechanism, it needs no publishing step, and it
+avoids restructuring `settings.gradle` into a composite build just so a sibling can apply a plugin,
+which would also take `rutter-gradle` outside the root conventions that give every artifact here its
+`checkClassFileVersion` and Java 8 floor.
 
 Layer 3 is the acceptance gate, and it is chosen because it can fail: it compares against an
-artifact already proven on five real Minecraft servers rather than against assertions written by
-the same hand as the code.
+artifact already proven on five real Minecraft servers rather than against assertions written by the
+same hand as the code. A **strict content** differential, not merely a matching entry list, is what
+makes it load bearing; with it green, re-running the four-backend smoke matrix against the
+plugin-built jar is confirmation rather than proof, so it stays a single opt-in run instead of a
+per-change gate that would download four Minecraft servers.
 
 ## Migration
 
