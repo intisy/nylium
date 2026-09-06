@@ -1,0 +1,16 @@
+name: Smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    uses: intisy/workflows/.github/workflows/test.yml@main
+    with:
+      java_version: '21'
+      gradle_test: ':smoke:test'
+      gradle_args: '-PrutterSmoke'
+      timeout_minutes: 120

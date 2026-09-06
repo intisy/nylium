@@ -288,7 +288,14 @@ selection actually discriminates. Two Fabric versions in one jar, each loading i
 module, is the smallest test that does.
 
 **Definition of done:** all four backends boot the test mod and load the correct module
-across that matrix, in CI, with `checkApiPurity` green.
+across that matrix, with `checkApiPurity` green.
+
+The matrix is a **dispatch-triggered gate, not a per-push one.** Each run provisions four
+Minecraft servers from upstream installers, which is too slow and too network-dependent to sit on
+every push, so `.github/workflows/smoke.yml` is `workflow_dispatch` only and `smoke/test` stays
+gated behind `-PrutterSmoke` locally. The per-push gate is the unit tests, `checkApiPurity` and
+`checkClassFileVersion`; a change to a backend has to be signed off by dispatching the smoke
+workflow, or by running `./gradlew :smoke:test -PrutterSmoke` locally.
 
 ## Risks
 
