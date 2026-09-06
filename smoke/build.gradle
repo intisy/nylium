@@ -128,6 +128,43 @@ tasks.register('provisionForge1710') {
     }
 }
 
+/**
+ * @implNote Unlike the 1.7.10 installer, the 1.16.5 installer's own output jar is already a
+ * complete, directly runnable server launcher (Main-Class plus a Class-Path manifest listing every
+ * library, Mixin included), so no launcher stub needs to be synthesized here; it is only renamed to
+ * the fixed name the smoke test launches.
+ */
+tasks.register('provisionForge1165') {
+    onlyIf { project.hasProperty('rutterSmoke') } // dependants' onlyIf does not gate a dependency's own execution
+    dependsOn ':rutter-testmod:universalJar'
+    doLast {
+        String forgeVersion = '1.16.5-36.2.34'
+        String installerUrl = "https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/forge-${forgeVersion}-installer.jar"
+        File dir = serversDir.get().dir('forge-1.16.5').asFile
+        dir.mkdirs()
+        File serverJar = new File(dir, 'forge-server.jar')
+        if (!serverJar.exists()) {
+            File installer = new File(dir, 'forge-installer.jar')
+            installer.withOutputStream { out -> new URL(installerUrl).withInputStream { out << it } }
+            installForgeServer(dir, installer, java8.get().executablePath.asFile.absolutePath)
+            File installedJar = new File(dir, "forge-${forgeVersion}.jar")
+            if (!installedJar.isFile()) {
+                throw new GradleException("Forge installer did not produce ${installedJar}")
+            }
+            if (!installedJar.renameTo(serverJar)) {
+                throw new GradleException("Could not rename ${installedJar} to ${serverJar}")
+            }
+        }
+        File modsDir = new File(dir, 'mods')
+        modsDir.mkdirs()
+        copy {
+            from project(':rutter-testmod').layout.buildDirectory.file('universal/rutter-testmod-universal.jar')
+            into modsDir
+        }
+        new File(dir, 'eula.txt').text = 'eula=true\n'
+    }
+}
+
 def resolveMixinJar() {
     project.configurations.detachedConfiguration(
             project.dependencies.create('org.spongepowered:mixin:0.8.7')
@@ -176,11 +213,11 @@ def installForgeServer(File dir, File installer, String javaExecutable) {
         process.destroyForcibly()
         process.waitFor()
         String captured = log.exists() ? log.text : '(no log)'
-        throw new GradleException("Forge 1.7.10 installer did not complete within 10 minutes. Log:\n${captured}")
+        throw new GradleException("The Forge installer in ${dir} did not complete within 10 minutes. Log:\n${captured}")
     }
     if (process.exitValue() != 0) {
         String captured = log.exists() ? log.text : '(no log)'
-        throw new GradleException("Forge 1.7.10 installer exited with code ${process.exitValue()}. Log:\n${captured}")
+        throw new GradleException("The Forge installer in ${dir} exited with code ${process.exitValue()}. Log:\n${captured}")
     }
 }
 
@@ -194,6 +231,7 @@ def gateProvisioningIntoSmokeTest() {
         tasks.named('test') {
             dependsOn tasks.named('provisionFabricServers')
             dependsOn tasks.named('provisionForge1710')
+            dependsOn tasks.named('provisionForge1165')
         }
     }
 }
