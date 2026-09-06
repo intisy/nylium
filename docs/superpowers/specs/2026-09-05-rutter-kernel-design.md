@@ -157,6 +157,38 @@ the hash matches, and guards concurrent launches with an atomic rename.
 ModLauncher at all, so NeoForge is a separate backend deferred to SP-1b. See the program overview's
 backend table.
 
+**ModLauncher 8: dispatch verified, game-class visibility UNRESOLVED.** Recorded 2026-09-06 after
+the backend was built and smoke-tested. Dispatch works and is proven on a real Forge 1.16.5 server:
+the correct module is selected, classpathed and its entrypoint invoked. But a consumer whose module
+needs to see Minecraft classes, or to apply mixins to them, cannot currently work through this
+backend.
+
+Bytecode analysis of ModLauncher 8.1.3 established why.
+`TransformationServicesHandler$TransformerClassLoader` (which discovers and instantiates
+`ITransformationService` implementations) extends `URLClassLoader`, while `TransformingClassLoader`
+(which hosts Minecraft, Forge and mod classes) extends `ClassLoader` directly. Both are parented to
+the system classloader, so they are **siblings** and neither can see the other's classes. Worse,
+`Launcher.run()` calls `initializeTransformationServices` (where a service's `onLoad` fires) *before*
+`buildTransformingClassLoader`, so at the moment Rutter runs the game classloader does not yet
+exist. Mixin configs registered at that point cannot be relied on to reach the transform pipeline
+that is wired into the game loader afterwards.
+
+This is unique to this generation. Fabric adds to Knot, which is the game loader. LaunchWrapper adds
+to `Launch.classLoader`, which is the transforming loader, and boots from inside a transformer on
+`MinecraftServer`, so Minecraft classes are demonstrably present. ModLauncher 9 deliberately targets
+`Layer.GAME` and defers to `initializeLaunch`. Only ModLauncher 8 separates discovery from game
+loading into independent sibling instances and fires its hook before the second is built.
+
+**Required before any consumer ships on 1.13 to 1.16:** a spike of the same weight as the
+ModLauncher 9 one, which must first build a module that genuinely touches a Minecraft class and
+mixins into one, since the current marker-writing test module passes identically whether a retarget
+works or not. The candidate mechanisms to evaluate are
+`ITransformationService.additionalClassesLocator()` / `additionalResourcesLocator()` (present on the
+real interface, returning a lazily-evaluated `Supplier`, which survives the loader-does-not-exist-yet
+problem) and a companion `ILaunchPluginService` as this generation's analogue of `initializeLaunch`,
+with `Platform.moduleClassLoader` returning the real transforming loader. The plan budgeted no spike
+for this backend; that was an omission.
+
 **Verification status of the ModLauncher 9+ range.** Forge 1.21.x is verified against a real server
 (1.21.11-61.1.5). Forge 1.17 - 1.20.x is source-compatible and confirmed to compile at release 8,
 but was never run, and its `initializeLaunch` carries only a two-argument form, so the backend
