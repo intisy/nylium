@@ -2,6 +2,19 @@ import org.gradle.jvm.toolchain.JavaLanguageVersion
 
 def serversDir = layout.buildDirectory.dir('servers')
 
+def defaultUniversalJar = project(':rutter-testmod').layout.buildDirectory.file('universal/rutter-testmod-universal.jar')
+
+/**
+ * @implNote Read inside each provisioning task's doLast, at execution time, so -PrutterSmokeJar
+ * behaves like every other -Prutter* flag here: irrelevant to a plain build and only consulted
+ * once -PrutterSmoke has already put a provisioning task on the graph. The copy destination is
+ * always renamed to the hand-rolled jar's own name, because ModLauncher9SmokeTest launches the
+ * server with an explicit -cp naming that file, not a directory scan.
+ */
+def resolveUniversalJar = {
+    project.hasProperty('rutterSmokeJar') ? new File(project.property('rutterSmokeJar') as String) : defaultUniversalJar.get().asFile
+}
+
 /**
  * @implNote The ambient PATH "java" that runs a Gradle task's own actions is whatever launched the
  * Gradle daemon, not necessarily a version a spawned Minecraft server needs (1.21.x needs Java 21;
@@ -33,8 +46,9 @@ tasks.register('provisionFabricServers') {
             }
             new File(dir, 'mods').mkdirs()
             copy {
-                from project(':rutter-testmod').layout.buildDirectory.file('universal/rutter-testmod-universal.jar')
+                from resolveUniversalJar()
                 into new File(dir, 'mods')
+                rename { 'rutter-testmod-universal.jar' }
             }
             new File(dir, 'eula.txt').text = 'eula=true\n'
 
@@ -116,8 +130,9 @@ tasks.register('provisionForge1710') {
         File modsDir = new File(dir, 'mods')
         modsDir.mkdirs()
         copy {
-            from project(':rutter-testmod').layout.buildDirectory.file('universal/rutter-testmod-universal.jar')
+            from resolveUniversalJar()
             into modsDir
+            rename { 'rutter-testmod-universal.jar' }
         }
         new File(dir, 'eula.txt').text = 'eula=true\n'
     }
@@ -153,8 +168,9 @@ tasks.register('provisionForge1165') {
         File modsDir = new File(dir, 'mods')
         modsDir.mkdirs()
         copy {
-            from project(':rutter-testmod').layout.buildDirectory.file('universal/rutter-testmod-universal.jar')
+            from resolveUniversalJar()
             into modsDir
+            rename { 'rutter-testmod-universal.jar' }
         }
         new File(dir, 'eula.txt').text = 'eula=true\n'
     }
@@ -188,8 +204,9 @@ tasks.register('provisionForge12111') {
             }
         }
         copy {
-            from project(':rutter-testmod').layout.buildDirectory.file('universal/rutter-testmod-universal.jar')
+            from resolveUniversalJar()
             into dir
+            rename { 'rutter-testmod-universal.jar' }
         }
         new File(dir, 'eula.txt').text = 'eula=true\n'
     }

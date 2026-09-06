@@ -81,8 +81,8 @@ rejected.
 
 ## Consumer walkthrough
 
-There is no packaging plugin yet (that is future work), so today a consumer wires this up by
-hand, the same way `rutter-testmod` does in this repository:
+A consumer can apply the Gradle packaging plugin documented below, or wire this up by hand the
+same way `rutter-testmod` does in this repository:
 
 1. Build one module jar per platform and Minecraft version range you support. Each module's
    entrypoint class needs a public static `void rutterInit()`.
@@ -105,6 +105,147 @@ build time:
 - **The LaunchWrapper backend needs Mixin on the runtime classpath**, which Forge 1.7.10 does not
   ship. A consumer targeting that era has to put a Mixin jar there itself; this repository's own
   smoke provisioning synthesises a launcher jar whose `Class-Path` adds one.
+
+## The Gradle packaging plugin
+
+Everything the consumer walkthrough above does by hand, that is, writing the manifest, wiring
+each loader's own entry contract, and bundling the right Rutter pieces, a Gradle plugin does
+from a declaration instead. Nothing is published anywhere yet: this section documents the
+plugin as it exists in this repository, not a coordinate you can resolve today.
+
+### Applying the plugin
+
+```groovy
+plugins {
+    id 'io.github.intisy.rutter'
+}
+```
+
+The plugin id is `io.github.intisy.rutter`, implemented by `rutter-gradle` in this repository.
+Until a release exists, applying it means building `rutter-gradle` and resolving it from wherever
+you published that build yourself, not from Maven Central or any other public repository.
+
+### The `rutter { }` surface
+
+```groovy
+rutter {
+    mod {
+        id = 'mymod'
+        name = 'My Mod'
+        version = '1.0.0'
+        environment = '*'
+        fabricLoaderVersion = '>=0.14.0'
+        modulePrefix = 'mymod'
+        description = 'An example mod'
+        license = 'MIT'
+        icon = 'icon.png'
+        authors = ['Alice', 'Bob']
+        contact = [homepage: 'https://example.com']
+        minecraftDependency = '>=1.20'
+    }
+
+    module('1.21.11') {
+        jar = file('build/modules/mymod-1.21.11.jar')
+        platforms = ['FABRIC']
+        minecraft = '1.21.11'
+        entrypoint = 'com.example.mymod.FabricModule'
+    }
+
+    module('1.16.5') {
+        jar = file('build/modules/mymod-1.16.5.jar')
+        platforms = ['MODLAUNCHER_8']
+        minecraft = '[1.13,1.16.5]'
+        environment = 'SERVER'
+        mixins = ['mixins.mymod.json']
+        priority = 0
+        entrypoint = 'com.example.mymod.Forge116Module'
+    }
+}
+```
+
+`mod { }` takes `id`, `name`, `version`, `environment`, `fabricLoaderVersion`, `modulePrefix`,
+`description`, `license`, `icon`, `authors`, `contact` and `minecraftDependency`. Only `id` is
+required; every other field falls back to a sensible default or is omitted from generated
+output when unset.
+
+Each `module('name') { }` takes `jar` (the already-built, already-remapped module jar for that
+platform and Minecraft range), `platforms` and `minecraft` (both required), plus the optional
+`environment`, `mixins`, `priority` and `entrypoint`. `platforms` is a list because one module
+can serve more than one loader when its bytecode works unchanged on both, most commonly
+`MODLAUNCHER_8` and `MODLAUNCHER_9` together.
+
+**ModLauncher 8 (Forge 1.13 to 1.16) dispatches but cannot reach Minecraft classes.** Dispatch
+is verified on a real Forge 1.16.5 server: the correct module is selected, classpathed and its
+entrypoint invoked. But a module declared with `platforms = ['MODLAUNCHER_8']` that needs to
+touch a Minecraft class, or mixin into one, cannot currently work through this backend, because
+of a classloader ordering problem in the kernel itself; see the kernel's own design spec for the
+full analysis.
+
+**A module built for `MODLAUNCHER_9` cannot currently be installed by dropping a jar in
+`mods/`.** The universal jar must be placed on the classpath directly (an explicit `-cp` plus
+the loader's own shim main class) rather than dropped in as an ordinary mod, because launch
+plugins are discovered from ModLauncher's boot module layer before Forge's `mods/` folder
+scanning ever runs.
+
+**`environment()` cannot detect CLIENT on either ModLauncher backend**, so a module declared
+with `environment = 'CLIENT'` never matches when the platform set includes `MODLAUNCHER_8` or
+`MODLAUNCHER_9`. Both backends answer SERVER unconditionally, because the loader has not yet
+published its actual launch target at the hook Rutter boots from.
+
+`NEOFORGE` is rejected by the plugin outright, at configuration time, because no NeoForge
+bootstrap exists yet.
+
+### What is derived, not written by hand
+
+A module's path inside the jar and its manifest index are both computed, not part of the DSL:
+
+- **Path:** `modules/<modulePrefix>-<name>.jar`, where `modulePrefix` defaults to the mod id.
+- **Manifest index:** the order you declare `module('...') { }` blocks in your build script, not
+  alphabetical order.
+
+This is the plugin's main advantage over copying `rutter-testmod`'s hand-written build block:
+those two details are exactly what a hand-rolled build gets to typo or drift on module by module.
+
+### What is generated per declared platform
+
+- The module manifest (`rutter-modules.properties`) is generated regardless of which platforms
+  are declared.
+- `fabric.mod.json` is generated only if any module declares `FABRIC`.
+- The shared `META-INF/services/cpw.mods.modlauncher.api.ITransformationService` file gets an
+  entry for `MODLAUNCHER_8` and a separate entry for `MODLAUNCHER_9`, whichever are declared;
+  both backends share the one service file.
+- `META-INF/services/cpw.mods.modlauncher.serviceapi.ILaunchPluginService` is generated only if
+  `MODLAUNCHER_9` is declared.
+- The `TweakClass` manifest attribute is set only if `LAUNCHWRAPPER` is declared.
+
+### Two deliberate choices in the generated `fabric.mod.json`
+
+Both look like omissions on first read; neither is.
+
+- **No `mixins` key.** A module's mixin configs live inside that module's own jar and are
+  registered through the platform at runtime, not through Fabric Loader's own mixin discovery.
+  Naming them in the outer jar's `fabric.mod.json` would point Fabric Loader at resources the
+  outer jar does not contain.
+- **No `depends.minecraft` by default.** A pinned Minecraft version in `fabric.mod.json` would
+  make Fabric Loader refuse the jar on every Minecraft version except that one, which defeats
+  the point of a universal jar. Set `mod { minecraftDependency = '...' }` explicitly if your mod
+  genuinely needs a floor.
+
+### Validation
+
+The plugin fails the build at configuration time rather than shipping a jar that cannot
+dispatch:
+
+- Every `minecraft` range is parsed with the kernel's own `VersionRange` parser, so a range the
+  game would reject cannot pass the build either.
+- An unknown platform name is rejected, naming the platforms it does know about.
+- `NEOFORGE` is rejected outright, as above.
+- A duplicate module name, an empty `rutter { }` block, and a module with no declared platforms
+  are all rejected with a specific message rather than silently accepted.
+- A declared mixin config that is absent from its own module jar is rejected.
+- A module jar that bundles the Rutter API itself is rejected: the universal jar already
+  provides it, so a module that shades it in duplicates classes the platform expects to find in
+  exactly one place.
 
 ## Known limitations
 
