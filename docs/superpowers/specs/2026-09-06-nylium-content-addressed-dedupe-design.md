@@ -166,9 +166,11 @@ not rewriting.
 
 **Phase 2, plugin functionals**, following the existing functional-test patterns including
 configuration cache and up-to-date behaviour. Object count equals distinct entry-content count; every
-index reconstructs its module byte-identically; a deduped jar is strictly smaller than the same jar
-undeduped; `dedupe = false` reproduces today's output exactly, which is what `DifferentialTest` now
-rests on; a single module defaults to no dedupe.
+index reconstructs its module entry for entry, meaning the same names in the same order with the same
+content, which is the strongest claim available since zip metadata such as timestamps and compression
+level is not reproduced and carries no meaning here; a deduped jar is strictly smaller than the same
+jar undeduped; `dedupe = false` reproduces today's output exactly, which is what `DifferentialTest`
+now rests on; a single module defaults to no dedupe.
 
 **Phase 3, acceptance.** The conformance mod with dedupe on, across all five servers, asserting every
 report key. Run with `--rerun-tasks` and the markers deleted first, per the handoff's trap. The
