@@ -39,7 +39,7 @@ public final class RutterMl8Service implements ITransformationService {
             return;
         }
         ModuleDescriptor module = RutterKernel.boot(
-                new Ml8Platform(),
+                new Ml8Platform(env),
                 RutterMl8Service.class.getClassLoader(),
                 Paths.get(".").resolve("rutter").resolve("cache"));
         System.out.println("[Rutter] booted " + module);

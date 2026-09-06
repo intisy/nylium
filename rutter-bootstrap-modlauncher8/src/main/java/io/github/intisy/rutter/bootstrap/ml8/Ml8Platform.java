@@ -1,5 +1,6 @@
 package io.github.intisy.rutter.bootstrap.ml8;
 
+import cpw.mods.modlauncher.api.IEnvironment;
 import io.github.intisy.rutter.api.Environment;
 import io.github.intisy.rutter.api.Platform;
 import io.github.intisy.rutter.api.PlatformId;
@@ -11,9 +12,16 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Optional;
 
 final class Ml8Platform implements Platform {
+
+    private final Environment environment;
+
+    Ml8Platform(IEnvironment env) {
+        this.environment = environmentOf(env);
+    }
 
     @Override
     public PlatformId id() {
@@ -22,7 +30,26 @@ final class Ml8Platform implements Platform {
 
     @Override
     public Environment environment() {
-        return exists("net.minecraft.client.Minecraft") ? Environment.CLIENT : Environment.SERVER;
+        return environment;
+    }
+
+    /**
+     * @implNote The class loader that discovers this service is a sibling of the loader that hosts
+     * the game, so probing for {@code net.minecraft.client.Minecraft} here reports SERVER even on a
+     * client. ModLauncher publishes its own {@code --launchTarget} argument as
+     * {@code IEnvironment.Keys.LAUNCHTARGET} from {@code ArgumentHandler.setArgs}, which
+     * {@code Launcher.run} calls before any service's {@code onLoad}, so that value is available
+     * this early and does distinguish {@code forgeclient} from {@code forgeserver}. The class probe
+     * remains as the fallback for an embedding that publishes no launch target at all.
+     */
+    private static Environment environmentOf(IEnvironment env) {
+        Optional<String> launchTarget = env.getProperty(IEnvironment.Keys.LAUNCHTARGET.get());
+        if (!launchTarget.isPresent()) {
+            return exists("net.minecraft.client.Minecraft") ? Environment.CLIENT : Environment.SERVER;
+        }
+        return launchTarget.get().toLowerCase(Locale.ROOT).contains("client")
+                ? Environment.CLIENT
+                : Environment.SERVER;
     }
 
     /**

@@ -1,5 +1,6 @@
 package io.github.intisy.rutter.bootstrap.ml9;
 
+import cpw.mods.modlauncher.api.IEnvironment;
 import cpw.mods.modlauncher.api.IModuleLayerManager;
 import io.github.intisy.rutter.api.Environment;
 import io.github.intisy.rutter.api.Platform;
@@ -9,6 +10,7 @@ import org.spongepowered.asm.mixin.Mixins;
 
 import java.lang.reflect.Method;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -19,10 +21,16 @@ import java.util.Optional;
  */
 final class Ml9Platform implements Platform {
 
+    private final Environment environment;
+
     private volatile Path pendingModulePath;
     private volatile String moduleName;
     private volatile Runnable pendingActivation;
     private volatile ClassLoader resolvedLoader;
+
+    Ml9Platform(IEnvironment env) {
+        this.environment = environmentOf(env);
+    }
 
     @Override
     public PlatformId id() {
@@ -31,7 +39,27 @@ final class Ml9Platform implements Platform {
 
     @Override
     public Environment environment() {
-        return exists("net.minecraft.client.Minecraft") ? Environment.CLIENT : Environment.SERVER;
+        return environment;
+    }
+
+    /**
+     * @implNote The SERVICE layer this class is loaded into is a parent of the GAME layer, which is
+     * why {@link #activate} has to go and find the game class loader reflectively; probing for
+     * {@code net.minecraft.client.Minecraft} from here therefore reports SERVER even on a client.
+     * ModLauncher publishes its own {@code --launchTarget} argument as
+     * {@code IEnvironment.Keys.LAUNCHTARGET} before any service's {@code onLoad} runs, so that
+     * value is available this early and does distinguish {@code forgeclient} from
+     * {@code forgeserver}. The class probe remains as the fallback for an embedding that publishes
+     * no launch target at all.
+     */
+    private static Environment environmentOf(IEnvironment env) {
+        Optional<String> launchTarget = env.getProperty(IEnvironment.Keys.LAUNCHTARGET.get());
+        if (!launchTarget.isPresent()) {
+            return exists("net.minecraft.client.Minecraft") ? Environment.CLIENT : Environment.SERVER;
+        }
+        return launchTarget.get().toLowerCase(Locale.ROOT).contains("client")
+                ? Environment.CLIENT
+                : Environment.SERVER;
     }
 
     @Override

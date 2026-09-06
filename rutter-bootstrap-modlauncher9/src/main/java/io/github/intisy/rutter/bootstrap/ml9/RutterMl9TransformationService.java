@@ -42,7 +42,7 @@ public final class RutterMl9TransformationService implements ITransformationServ
         if (!isModLauncher9OrNewer()) {
             return;
         }
-        Ml9Platform created = new Ml9Platform();
+        Ml9Platform created = new Ml9Platform(env);
         this.platform = created;
         Ml9Bridge.platform = created;
         Ml9Bridge.module = RutterKernel.boot(
