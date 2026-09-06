@@ -1,0 +1,41 @@
+plugins {
+    id 'java-gradle-plugin'
+}
+
+dependencies {
+    implementation project(':rutter-api')
+    implementation project(':rutter-core')
+
+    testImplementation gradleTestKit()
+    testImplementation 'com.google.code.gson:gson:2.10.1'
+}
+
+gradlePlugin {
+    plugins {
+        rutter {
+            id = 'io.github.intisy.rutter'
+            implementationClass = 'io.github.intisy.rutter.gradle.RutterPlugin'
+        }
+    }
+}
+
+def versionFile = layout.buildDirectory.file('generated/rutter-version/rutter-gradle-version.properties')
+
+/**
+ * @implNote The plugin resolves the embedded runtime pieces at its own version, so the version has
+ *     to reach it at execution time; a generated resource is the only channel that survives being
+ *     applied from a published jar.
+ */
+def writeRutterVersion = tasks.register('writeRutterVersion') {
+    inputs.property('version', providers.provider { project.version.toString() })
+    outputs.file(versionFile)
+    doLast {
+        def file = versionFile.get().asFile
+        file.parentFile.mkdirs()
+        file.text = "version=${project.version}\n"
+    }
+}
+
+tasks.named('processResources') {
+    from(writeRutterVersion)
+}
