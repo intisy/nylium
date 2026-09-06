@@ -125,6 +125,7 @@ gradlePlugin {
 }
 
 def versionFile = layout.buildDirectory.file('generated/rutter-version/rutter-gradle-version.properties')
+def rutterVersion = providers.provider { project.version.toString() }
 
 /**
  * @implNote The plugin resolves the embedded runtime pieces at its own version, so the version has
@@ -132,14 +133,19 @@ def versionFile = layout.buildDirectory.file('generated/rutter-version/rutter-gr
  *     applied from a published jar.
  */
 def writeRutterVersion = tasks.register('writeRutterVersion') {
-    inputs.property('version', providers.provider { project.version.toString() })
+    inputs.property('version', rutterVersion)
     outputs.file(versionFile)
     doLast {
         def file = versionFile.get().asFile
         file.parentFile.mkdirs()
-        file.text = "version=${project.version}\n"
+        file.setText("version=${rutterVersion.get()}\n", 'UTF-8')
     }
 }
+```
+
+The action reads the captured provider and never touches `project`. Reaching `Task.project` at execution time is deprecated, is documented to fail in Gradle 10, and is incompatible with the configuration cache, which matters for a plugin other builds apply. The charset is pinned for the same reason `ModuleManifest` pins it: an unpinned default is a known trap in this repo.
+
+```groovy
 
 tasks.named('processResources') {
     from(writeRutterVersion)
