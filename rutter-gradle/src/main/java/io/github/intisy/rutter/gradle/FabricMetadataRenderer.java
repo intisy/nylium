@@ -27,7 +27,8 @@ final class FabricMetadataRenderer {
         addContact(lines, mod.getContact().get());
         addOptional(lines, "license", mod.getLicense().getOrNull());
         addOptional(lines, "icon", mod.getIcon().getOrNull());
-        lines.add("  \"environment\": " + Json.quote(mod.getEnvironment().getOrElse("*")));
+        lines.add("  \"environment\": "
+                + Json.quote(FabricEnvironments.canonical(mod.getEnvironment().getOrNull())));
         lines.add("  \"entrypoints\": { \"preLaunch\": [" + Json.quote(PRE_LAUNCH) + "] }");
         lines.add("  \"depends\": " + depends(mod));
         return "{\n" + String.join(",\n", lines) + "\n}\n";

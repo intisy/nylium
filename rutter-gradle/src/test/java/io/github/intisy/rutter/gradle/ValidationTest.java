@@ -145,6 +145,40 @@ class ValidationTest {
     }
 
     @Test
+    void rejectsAnUnknownModEnvironment() {
+        RutterExtension rutter = extensionWith("FABRIC", "1.21.11");
+        rutter.getMod().getEnvironment().set("BOTH");
+        InvalidUserDataException thrown = assertThrows(InvalidUserDataException.class,
+                rutter::resolve);
+        assertTrue(thrown.getMessage().contains("BOTH"));
+        assertTrue(thrown.getMessage().contains("Known environments are [*, client, server]"));
+    }
+
+    @Test
+    void acceptsAModEnvironmentInAnyCase() {
+        RutterExtension rutter = extensionWith("FABRIC", "1.21.11");
+        rutter.getMod().getEnvironment().set("Server");
+        assertEquals(1, rutter.resolve().size());
+    }
+
+    @Test
+    void rejectsAModIdFabricLoaderWouldRefuse() {
+        Project project = ProjectBuilder.builder().build();
+        project.getPlugins().apply("io.github.intisy.rutter");
+        RutterExtension rutter = (RutterExtension) project.getExtensions().getByName("rutter");
+        rutter.mod(mod -> mod.getId().set("My.Mod"));
+        rutter.module("1.21.11", module -> {
+            module.getJar().set(new File(project.getProjectDir(), "module.jar"));
+            module.getPlatforms().set(Collections.singletonList("FABRIC"));
+            module.getMinecraft().set("1.21.11");
+        });
+        InvalidUserDataException thrown = assertThrows(InvalidUserDataException.class,
+                rutter::resolve);
+        assertTrue(thrown.getMessage().contains("My.Mod"));
+        assertTrue(thrown.getMessage().contains("^[a-z][a-z0-9-_]{1,63}$"));
+    }
+
+    @Test
     void rejectsAModuleWithoutAJar() {
         Project project = ProjectBuilder.builder().build();
         project.getPlugins().apply("io.github.intisy.rutter");

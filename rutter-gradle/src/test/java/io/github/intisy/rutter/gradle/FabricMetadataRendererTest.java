@@ -3,12 +3,14 @@ package io.github.intisy.rutter.gradle;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Project;
 import org.gradle.testfixtures.ProjectBuilder;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FabricMetadataRendererTest {
@@ -77,6 +79,31 @@ class FabricMetadataRendererTest {
         String value = "back\\slash\nnewline";
         mod.getDescription().set(value);
         assertEquals(value, render(mod).get("description").getAsString());
+    }
+
+    @Test
+    void lowerCasesAKnownEnvironmentName() {
+        ModSpec mod = spec();
+        mod.getEnvironment().set("CLIENT");
+        assertEquals("client", render(mod).get("environment").getAsString());
+    }
+
+    @Test
+    void rejectsAnEnvironmentFabricWouldRefuse() {
+        ModSpec mod = spec();
+        mod.getEnvironment().set("BOTH");
+        InvalidUserDataException thrown =
+                assertThrows(InvalidUserDataException.class, () -> render(mod));
+        assertTrue(thrown.getMessage().contains("BOTH"));
+        assertTrue(thrown.getMessage().contains("Known environments are [*, client, server]"));
+    }
+
+    @Test
+    void defaultsTheEnvironmentToAnyWhenUnset() {
+        Project project = ProjectBuilder.builder().build();
+        ModSpec mod = project.getObjects().newInstance(ModSpec.class);
+        mod.getId().set("rutter_testmod");
+        assertEquals("*", render(mod).get("environment").getAsString());
     }
 
     @Test

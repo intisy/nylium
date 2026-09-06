@@ -14,8 +14,11 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 public class RutterExtension {
+
+    private static final Pattern MOD_ID = Pattern.compile("^[a-z][a-z0-9-_]{1,63}$");
 
     private final Project project;
     private final ModSpec mod;
@@ -71,17 +74,27 @@ public class RutterExtension {
         return prefix.trim();
     }
 
+    /**
+     * @implNote The pattern is Fabric Loader's own, and an id it refuses is a launch failure with
+     *     an otherwise green build; the id also becomes the default module file name prefix.
+     */
     private String requiredId() {
         String id = mod.getId().getOrNull();
         if (id == null || id.trim().isEmpty()) {
             throw new InvalidUserDataException(
                     "The Rutter mod id is not set. Set it in the rutter { mod { id = ... } } block.");
         }
-        return id.trim();
+        String trimmed = id.trim();
+        if (!MOD_ID.matcher(trimmed).matches()) {
+            throw new InvalidUserDataException("The Rutter mod id '" + trimmed + "' is not a legal"
+                    + " mod id. It has to match " + MOD_ID.pattern() + ".");
+        }
+        return trimmed;
     }
 
     List<ResolvedModule> resolve() {
         String prefix = modulePrefix();
+        FabricEnvironments.requireKnown(mod.getEnvironment().getOrNull());
         if (modules.isEmpty()) {
             throw new InvalidUserDataException(
                     "Rutter declares no modules. Add at least one rutter { module('...') { } } block.");
