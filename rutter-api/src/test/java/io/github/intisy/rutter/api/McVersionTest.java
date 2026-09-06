@@ -64,4 +64,19 @@ class McVersionTest {
         assertThrows(RutterException.class, () -> McVersion.parse("1.21.11-pre1"));
         assertThrows(RutterException.class, () -> McVersion.parse(""));
     }
+
+    @Test
+    void rejectsNoVersionAtAll() {
+        assertThrows(RutterException.class, () -> McVersion.parse(null));
+    }
+
+    @Test
+    void rejectsANegativeComponent() {
+        assertThrows(RutterException.class, () -> McVersion.parse("1.-3"));
+    }
+
+    @Test
+    void rejectsMoreComponentsThanAreCompared() {
+        assertThrows(RutterException.class, () -> McVersion.parse("1.21.11.1.4"));
+    }
 }
