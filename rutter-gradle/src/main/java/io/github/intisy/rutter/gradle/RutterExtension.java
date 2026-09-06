@@ -107,7 +107,7 @@ public class RutterExtension {
         for (String name : moduleOrder) {
             resolved.add(resolveOne(modules.getByName(name), prefix));
         }
-        if (RutterPlugin.platformUnion(resolved).contains(PlatformId.FABRIC)) {
+        if (ResolvedModule.declaresFabric(resolved)) {
             requireFabricLegalId();
         }
         return resolved;

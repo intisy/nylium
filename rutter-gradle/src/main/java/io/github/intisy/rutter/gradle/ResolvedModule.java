@@ -70,4 +70,13 @@ final class ResolvedModule {
     Provider<RegularFile> jar() {
         return jar;
     }
+
+    static boolean declaresFabric(List<ResolvedModule> modules) {
+        for (ResolvedModule module : modules) {
+            if (module.platforms().contains(PlatformId.FABRIC)) {
+                return true;
+            }
+        }
+        return false;
+    }
 }
