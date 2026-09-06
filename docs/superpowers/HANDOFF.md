@@ -12,8 +12,11 @@ broke.
 ## Where things are
 
 - Repo: `F:\Documents\GitHub\intisy\minecraft\mods\Nylium`
-- Branch: `development`, well ahead of `master`. **No git remote configured, nothing pushed.**
-- `master` holds only the initial spec and plan commits.
+- **Published 2026-09-06 as <https://github.com/intisy/nylium>**, public, default branch `master`.
+- Branches: `master` (default, what the README generator renders onto) and `development` (where
+  work happens). Both are currently at the same commit; `development` was fast-forwarded into
+  `master` at publish time.
+- CI: `Test` is green on both branches. `Smoke` and `Generate README` are `workflow_dispatch` only.
 - Build: `./gradlew build --offline` is green with `:smoke:test SKIPPED`.
 - Smoke matrix: `./gradlew :smoke:test -PnyliumSmoke`, optionally `-PnyliumSmokeJar=<abs path>` to
   test a specific universal jar. **Add `--rerun-tasks`**: with unchanged inputs the task reports
@@ -117,9 +120,9 @@ before writing code against any API the plan names:
 
 ## Pending decisions that are the owner's, not an agent's
 
-- Create `intisy/nylium` on GitHub and add a remote. **Nothing has been pushed.**
-- Merge `development` into `master`. README generation runs on the default branch only;
-  `development` carries `CONTENT.md` plus `.github/docs-config.yml` as the generator's input.
+- **There is no LICENSE file, and the repo is public.** With no license the default is "all rights
+  reserved", which contradicts the stated intent that other mods can use this. Pick one and add it.
+  Note Baritone is LGPL-3.0, but Nylium shares no code with it and is not bound to that choice.
 - The smoke matrix is a `workflow_dispatch`-only CI caller by design, not a per-push gate: it
   provisions four Minecraft servers. `.github/workflows/smoke.yml`.
 - **Retire `nylium-testmod`'s hand-rolled `universalJar`?** The plugin reproduces it byte for byte,
