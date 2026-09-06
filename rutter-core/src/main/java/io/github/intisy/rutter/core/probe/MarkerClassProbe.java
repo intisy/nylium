@@ -9,15 +9,16 @@ import java.util.Optional;
  * appeared in specific versions, newest marker first.
  *
  * @implNote This probe covers the pre-1.14 versions that shipped no {@code version.json}, where
- * no loader API exposes the running version either. It reports a floor, not an exact version:
- * the returned string is the earliest release a matched marker is known to appear in, so callers
- * should treat this probe as a last resort and write dependent module ranges broadly.
+ * no loader API exposes the running version either.
  * @implNote Presence is tested with {@link ClassLoader#loadClass(String)} rather than
- * {@link Class#forName(String, boolean, ClassLoader)}: on this JDK, {@code forName} additionally
- * verifies that the resolved class's name matches the requested name and throws
- * {@link ClassNotFoundException} on a mismatch, while {@code loadClass} does not. Both behave
- * identically for a real classloader, which never resolves a name to a class with a different
- * name.
+ * {@link Class#forName(String, boolean, ClassLoader)}: {@code forName}'s native implementation
+ * additionally verifies that the resolved class's name matches the requested name and throws
+ * {@link ClassNotFoundException} on a mismatch, while {@code loadClass} does not. This also keeps
+ * a matched marker class unlinked and uninitialised, which matters because it may be a Minecraft
+ * registry class whose static initialiser must not run this early in startup.
+ * @implNote This probe identifies an era floor, not an exact version, so a caller that needs to
+ * distinguish versions within an era must not depend on it; module ranges that rely on this probe
+ * are deliberately written broadly.
  */
 public final class MarkerClassProbe implements VersionProbe {
 
@@ -25,7 +26,6 @@ public final class MarkerClassProbe implements VersionProbe {
 
     static {
         MARKERS.put("net.minecraft.util.registry.Registry", "1.13");
-        MARKERS.put("net.minecraft.block.Blocks", "1.9");
         MARKERS.put("net.minecraft.init.Blocks", "1.7.10");
     }
 

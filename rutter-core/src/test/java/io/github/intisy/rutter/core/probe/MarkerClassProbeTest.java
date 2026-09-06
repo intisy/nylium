@@ -24,16 +24,16 @@ class MarkerClassProbeTest {
     void reportsTheNewestMarkerPresent() {
         ClassLoader loader = loaderKnowing(
                 "net.minecraft.util.registry.Registry",
-                "net.minecraft.block.Blocks");
+                "net.minecraft.init.Blocks");
 
         assertEquals("1.13", new MarkerClassProbe(loader).detect().orElseThrow(AssertionError::new));
     }
 
     @Test
     void reportsAnOlderMarkerWhenNewerOnesAreAbsent() {
-        ClassLoader loader = loaderKnowing("net.minecraft.block.Blocks");
+        ClassLoader loader = loaderKnowing("net.minecraft.init.Blocks");
 
-        assertEquals("1.9", new MarkerClassProbe(loader).detect().orElseThrow(AssertionError::new));
+        assertEquals("1.7.10", new MarkerClassProbe(loader).detect().orElseThrow(AssertionError::new));
     }
 
     @Test
