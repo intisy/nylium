@@ -6,7 +6,7 @@ import io.github.intisy.rutter.gradle.ClassFileVersionTask
  *     publication instead of a second one at the same coordinates, and {@code rutter-testmod}/
  *     {@code smoke} are not release artifacts.
  */
-def embeddedArtifactPaths = [':rutter-api', ':rutter-core', ':rutter-bootstrap-fabric',
+ext.embeddedArtifactPaths = [':rutter-api', ':rutter-core', ':rutter-bootstrap-fabric',
                              ':rutter-bootstrap-launchwrapper', ':rutter-bootstrap-modlauncher8',
                              ':rutter-bootstrap-modlauncher9']
 
