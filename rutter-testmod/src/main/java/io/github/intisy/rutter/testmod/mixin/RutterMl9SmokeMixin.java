@@ -1,20 +1,13 @@
 package io.github.intisy.rutter.testmod.mixin;
 
+import io.github.intisy.rutter.testmod.MarkerWriter;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AccessDeniedException;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.FileAlreadyExistsException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 
 /**
  * Demonstrates that a mixin registered from a ModLauncher 9+ injected module actually applies to a
@@ -26,7 +19,9 @@ import java.nio.file.StandardCopyOption;
  * @implNote Lives in its own package, separate from {@code io.github.intisy.rutter.testmod}: Mixin
  * treats a config's declared {@code package} as entirely mixin-owned and throws
  * {@code IllegalClassLoadError} on any other class in that package being loaded directly, which
- * broke {@code TestModEntry} when both shared a package.
+ * broke {@code TestModEntry} when both shared a package. {@link MarkerWriter} stays public in the
+ * parent package for exactly that reason: this class cannot reach a package-private sibling in
+ * {@code io.github.intisy.rutter.testmod}.
  */
 @Mixin(targets = "net.minecraft.server.Main")
 public final class RutterMl9SmokeMixin {
@@ -37,28 +32,6 @@ public final class RutterMl9SmokeMixin {
         if (target == null) {
             return;
         }
-        writeAtomically(Paths.get(target), "mixin=applied\n".getBytes(StandardCharsets.UTF_8));
-    }
-
-    private static void writeAtomically(Path marker, byte[] bytes) {
-        try {
-            Files.createDirectories(marker.getParent());
-            Path temporary = Files.createTempFile(marker.getParent(), "rutter-mixin-marker-", ".part");
-            try {
-                Files.write(temporary, bytes);
-                try {
-                    Files.move(temporary, marker, StandardCopyOption.ATOMIC_MOVE);
-                } catch (AtomicMoveNotSupportedException | FileAlreadyExistsException | AccessDeniedException e) {
-                    Files.move(temporary, marker, StandardCopyOption.REPLACE_EXISTING);
-                }
-            } finally {
-                try {
-                    Files.deleteIfExists(temporary);
-                } catch (IOException ignored) {
-                }
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        MarkerWriter.write(Paths.get(target), "mixin=applied\n".getBytes(StandardCharsets.UTF_8));
     }
 }

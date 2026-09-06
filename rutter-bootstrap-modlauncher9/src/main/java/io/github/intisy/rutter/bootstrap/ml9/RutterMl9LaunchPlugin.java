@@ -8,9 +8,12 @@ import java.util.EnumSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * @implNote Shares a jar with {@link RutterMl9TransformationService}, so this also no-ops on
- * ModLauncher 8, where {@link Ml9Bridge#platform} is never set because that service's own generation
- * check never runs {@code RutterKernel.boot}.
+ * @implNote Shares a jar with {@link RutterMl9TransformationService} and both are listed in the same
+ * generation-agnostic services files, so this runs the same {@code SecureJar}-presence check that
+ * service uses, rather than only relying on {@link Ml9Bridge#platform} staying {@code null} because
+ * the sibling service's own check skipped {@code RutterKernel.boot}. That coupling is empirically
+ * safe but not independently auditable, and this class is the only place a stray copy of it ends up
+ * on a ModLauncher 8 boot layer with nothing else to catch it.
  * @implNote This is the earliest point at which the module injected in {@code beginScanning}
  * becomes loadable; see the spike doc, Finding 4.
  */
@@ -42,7 +45,7 @@ public final class RutterMl9LaunchPlugin implements ILaunchPluginService {
     }
 
     private void activate() {
-        if (!activated.compareAndSet(false, true)) {
+        if (!isModLauncher9OrNewer() || !activated.compareAndSet(false, true)) {
             return;
         }
         Ml9Platform platform = Ml9Bridge.platform;
@@ -51,5 +54,15 @@ public final class RutterMl9LaunchPlugin implements ILaunchPluginService {
         }
         platform.activate(Ml9Bridge.moduleLayerManager);
         System.out.println("[Rutter] booted " + Ml9Bridge.module);
+    }
+
+    private static boolean isModLauncher9OrNewer() {
+        try {
+            Class.forName("cpw.mods.jarhandling.SecureJar", false,
+                    RutterMl9LaunchPlugin.class.getClassLoader());
+            return true;
+        } catch (ClassNotFoundException | LinkageError e) {
+            return false;
+        }
     }
 }

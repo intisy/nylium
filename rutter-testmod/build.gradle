@@ -109,6 +109,9 @@ io.github.intisy.rutter.bootstrap.ml9.RutterMl9TransformationService
         rename '.*', 'cpw.mods.modlauncher.serviceapi.ILaunchPluginService'
     }
 
+    // No META-INF/mods.toml or neoforge.mods.toml: this jar never goes through FML's or NeoForge's
+    // mod-loading pipeline at all, only ModLauncher's own ITransformationService/ILaunchPluginService
+    // SPI, so there is no mod-loader metadata for either file to declare.
     from(resources.text.fromString('''
 {
   "schemaVersion": 1,
