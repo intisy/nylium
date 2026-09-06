@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -71,6 +72,15 @@ class DifferentialTest {
     @TempDir
     Path configCacheProjectDir;
 
+    /**
+     * @implNote {@code producedJar} lives under this class's {@code @TempDir}, gone once the test
+     *     finishes, so a human wanting to point the smoke harness's {@code -PrutterSmokeJar} at a
+     *     plugin-built jar needs a copy somewhere durable. This path is that copy; it is never read
+     *     by an assertion in this class.
+     */
+    private static final Path PERSISTED_JAR =
+            Paths.get("build/universal/plugin-built-universal.jar").toAbsolutePath();
+
     private static Path referenceJar;
     private static Path producedJar;
 
@@ -80,6 +90,19 @@ class DifferentialTest {
         runner(projectDir, "rutterUniversalJar", "--offline").build();
         producedJar = onlyFileIn(projectDir.resolve("build/distributions"));
         referenceJar = Paths.get(System.getProperty("rutter.test.reference"));
+        persistProducedJarForManualVerification();
+    }
+
+    /**
+     * @implNote A copy failure here must never fail the differential gate: it serves manual
+     *     verification only, not any assertion in this class, so any exception is swallowed.
+     */
+    private static void persistProducedJarForManualVerification() {
+        try {
+            Files.createDirectories(PERSISTED_JAR.getParent());
+            Files.copy(producedJar, PERSISTED_JAR, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ignored) {
+        }
     }
 
     @Test
