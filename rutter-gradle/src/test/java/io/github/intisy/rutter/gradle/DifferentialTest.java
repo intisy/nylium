@@ -197,7 +197,9 @@ class DifferentialTest {
         List<String> declared = new ArrayList<String>();
         declared.addAll(nonBlankLines(readEntryText(producedJar, TRANSFORMATION_SERVICE_FILE)));
         declared.addAll(nonBlankLines(readEntryText(producedJar, LAUNCH_PLUGIN_SERVICE_FILE)));
-        declared.add(manifestAttribute(producedJar, "TweakClass"));
+        String tweakClass = manifestAttribute(producedJar, "TweakClass");
+        assertNotNull(tweakClass, "the produced jar declares no TweakClass manifest attribute");
+        declared.add(tweakClass);
         declared.add(preLaunchEntrypoint(producedJar));
         assertEquals(5, declared.size(), "expected five declared bootstrap entries: " + declared);
         for (String className : declared) {
