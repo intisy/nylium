@@ -1634,11 +1634,13 @@ Append inside `afterEvaluate`, after the metadata wiring:
                 jar.setDescription("Assembles the Rutter universal jar.");
                 jar.getArchiveClassifier().set("universal");
                 jar.dependsOn(metadata);
+                jar.setDuplicatesStrategy(DuplicatesStrategy.FAIL);
 
+                final ArchiveOperations archives = archiveOperations;
                 jar.from(evaluated.provider(() -> {
                     java.util.List<Object> trees = new java.util.ArrayList<Object>();
                     for (File artifact : embed.getFiles()) {
-                        trees.add(evaluated.zipTree(artifact));
+                        trees.add(archives.zipTree(artifact));
                     }
                     return trees;
                 }), copy -> copy.exclude("META-INF/MANIFEST.MF", "META-INF/*.SF",
@@ -1663,6 +1665,12 @@ Append inside `afterEvaluate`, after the metadata wiring:
 ```
 
 The excludes are not cosmetic. Unpacking published jars would otherwise contribute each artifact's own `META-INF/MANIFEST.MF`, which both collides between artifacts and diverges from the reference jar the Task 8 differential compares against.
+
+Three details in that block are load bearing:
+
+- **`zipTree` comes from a constructor-injected `ArchiveOperations`, not from the `Project`.** The provider runs when the `Jar` task builds its file tree, which is execution time, so closing over a `Project` there is configuration-cache incompatible. A Gradle service is safe to hold across that boundary. Inject it with `@Inject public RutterPlugin(ArchiveOperations archiveOperations)`.
+- **`DuplicatesStrategy.FAIL`.** The default is `INCLUDE`, so a path collision between two embedded jars, or between a jar and the metadata tree, would silently emit duplicate entries whose winner depends on copy order. Failing loudly names the collision instead, and keeps the Task 8 entry-set differential from quietly absorbing a duplicate.
+- The embedded artifacts are resolved from `rutterEmbed` at execution time, so a plain `./gradlew tasks` never resolves them.
 
 - [ ] **Step 4: Write the wiring test**
 
@@ -1744,6 +1752,10 @@ class UniversalJarWiringTest {
 ```
 
 If `ProjectInternal.evaluate()` proves unusable, trigger `afterEvaluate` the way the surrounding tests do and record what you used; the assertions are what matter, not the trigger.
+
+Assert the embedded dependencies' group and version as well as their name, since a hardcoded version bypassing `pluginVersion()` would otherwise pass unnoticed and the version is resolvable in process from a classpath resource. Include `rutter-bootstrap-modlauncher8` in the FABRIC-only absence assertions, which otherwise skip exactly one bootstrap.
+
+Add a separate functional test that runs `rutterUniversalJar` with `--configuration-cache` twice and asserts a cold store followed by a warm reuse. Without it, configuration-cache safety is an argument rather than a measurement.
 
 - [ ] **Step 5: Run**
 
