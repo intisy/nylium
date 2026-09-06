@@ -51,7 +51,8 @@ broke.
 
 ## What is proven, and how
 
-One universal jar, four loader families, five real Minecraft servers. Verified by marker files
+One universal jar, four loader families, five real Minecraft servers. **Re-verified under the
+Nylium name on 2026-09-06**, 5 tests, 0 failures. Verified by marker files
 written on disk by the dispatched module's own entrypoint, re-checked after deleting them and
 forcing a full re-run:
 
@@ -143,6 +144,16 @@ Each of these produced a green result that meant nothing, or nearly did.
   the XML mtimes. `-p buildSrc` does **not** work: buildSrc declares no `gradleApi()` dependency
   and relies on Gradle injecting it, so standalone it fails with "package org.gradle.api does not
   exist" - a failure that looks like a real defect and is not one.
+
+- **The smoke harness installs by filename, so a renamed jar does not replace the old one.** After
+  the Rutter to Nylium rename every server directory held BOTH
+  `rutter-testmod-universal.jar` and `nylium-testmod-universal.jar`, plus a stale `rutter/`
+  extraction cache. Only ModLauncher 8 failed, and it failed hard: it is the one backend where
+  `ServiceLoader` instantiates every entry in the shared `META-INF/services` file, so the stale
+  service booted, named an entrypoint that no longer existed, and killed the JVM before the live
+  module could write its marker. The other three raced past it because the harness force-kills as
+  soon as a marker appears. If you rename anything again, clear `smoke/build/servers/*/mods/` and
+  the per-name extraction cache first, or the failure will look like a kernel regression.
 
 - **A smoke run can pass without launching anything.** With unchanged inputs `:smoke:test` reports
   `UP-TO-DATE`, so `BUILD SUCCESSFUL` proves nothing: no server starts and no marker is written.
