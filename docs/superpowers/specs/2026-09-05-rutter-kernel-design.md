@@ -189,6 +189,32 @@ problem) and a companion `ILaunchPluginService` as this generation's analogue of
 with `Platform.moduleClassLoader` returning the real transforming loader. The plan budgeted no spike
 for this backend; that was an omission.
 
+**ModLauncher 9+: works fully, but is NOT installable by dropping a jar in `mods/`.** Recorded
+2026-09-06. Note this is a *deployment* limitation, not a correctness one, and so is a different kind
+of gap from ModLauncher 8's above. Dispatch, mixin application and the deferred activation are all
+verified working on a real Forge 1.21.11-61.1.5 server, including a genuine
+`@Mixin(targets="net.minecraft.server.Main")` whose injected callback demonstrably ran.
+
+The constraint is that this backend's deferral hook is an `ILaunchPluginService`, and launch plugins
+cannot arrive from `mods/` on this generation. Bytecode analysis established the ordering:
+`LaunchPluginHandler`'s constructor performs `ServiceLoader.load(bootLayer, ILaunchPluginService.class)`
+from inside `Launcher.<init>`, before `Launcher.run()` is called at all, whereas `Launcher.run()`'s
+first action is the `discoverServices` call where Forge's `ModDirTransformerDiscoverer` scans `mods/`.
+That discoverer's service set is hardcoded to `ITransformationService`, `IModLocator` and
+`IDependencyLocator`, so `ILaunchPluginService` is never a `mods/` trigger, and it would not matter
+if it were: the launch-plugin map is already frozen from the boot layer by then.
+
+The smoke test therefore proves the mechanism but cannot prove installability, and does not claim to:
+it places the universal jar beside the server and launches with an explicit `-cp` against the Forge
+bootstrap shim, rather than copying it into `mods/` as the other three backends' provisioning does.
+
+**Candidate direction for the follow-on spike**, which is not a repair of this route but a different
+one: ordinary Forge mods do get mixins applied from `mods/`, by piggybacking Forge's own mixin launch
+plugin through a `mods.toml` declaration or a `MixinConfigs` manifest attribute, rather than
+supplying a launch plugin of their own. A `mods/`-installable variant of this backend most likely
+needs that mechanism instead, which also means it would need mod metadata this module deliberately
+omits today.
+
 **Verification status of the ModLauncher 9+ range.** Forge 1.21.x is verified against a real server
 (1.21.11-61.1.5). Forge 1.17 - 1.20.x is source-compatible and confirmed to compile at release 8,
 but was never run, and its `initializeLaunch` carries only a two-argument form, so the backend
