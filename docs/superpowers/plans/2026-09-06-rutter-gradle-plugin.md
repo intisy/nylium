@@ -1378,6 +1378,11 @@ public class RutterPlugin implements Plugin<Project> {
                 task.setDescription("Generates the Rutter manifest and loader metadata."));
 
         project.afterEvaluate(evaluated -> {
+            if (rutter.getModules().isEmpty()) {
+                failWhenInvokedWithNoModules(metadata);
+                return;
+            }
+
             List<ResolvedModule> modules = rutter.resolve();
             Set<PlatformId> platforms = platformUnion(modules);
 
@@ -1403,6 +1408,18 @@ public class RutterPlugin implements Plugin<Project> {
             }
             metadata.configure(task -> task.dependsOn(writers));
         });
+    }
+
+    /**
+     * @implNote {@code afterEvaluate} runs for every task invocation, including plain introspection
+     *     such as {@code tasks} or {@code help}, so an unconfigured project must not fail here;
+     *     only invoking {@code rutterMetadata} itself should fail, with an actionable message.
+     */
+    private static void failWhenInvokedWithNoModules(TaskProvider<Task> metadata) {
+        metadata.configure(task -> task.doFirst(ignored -> {
+            throw new InvalidUserDataException("Rutter is applied but declares no modules. Add at"
+                    + " least one rutter { module('...') { } } block.");
+        }));
     }
 
     static Set<PlatformId> platformUnion(List<ResolvedModule> modules) {
@@ -1507,6 +1524,8 @@ class UpToDateFunctionalTest {
     }
 }
 ```
+
+Add three more cases. Two cover the empty-module guard, and both halves are needed: applying the plugin with no `rutter { }` block at all must leave a plain introspection command such as `tasks` succeeding, and invoking `rutterMetadata` on that same project must fail with the actionable message. Asserting only the first half would also pass if the plugin silently registered nothing. The third extends the up-to-date-then-rebuild assertion to `fabric.mod.json`, so the regression this task exists to prevent is proven for more than one of the four generated files, and asserts `ILaunchPluginService` is absent alongside `ITransformationService`, since the two share their gating.
 
 - [ ] **Step 4: Run it**
 
