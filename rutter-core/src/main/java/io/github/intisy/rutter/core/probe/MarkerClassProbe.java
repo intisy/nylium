@@ -47,7 +47,6 @@ public final class MarkerClassProbe implements VersionProbe {
                 loader.loadClass(marker.getKey());
                 return Optional.of(marker.getValue());
             } catch (ClassNotFoundException | LinkageError e) {
-                // empty
             }
         }
         return Optional.empty();

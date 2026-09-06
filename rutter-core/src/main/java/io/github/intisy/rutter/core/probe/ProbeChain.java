@@ -29,7 +29,7 @@ public final class ProbeChain {
                     try {
                         return McVersion.parse(detected.get());
                     } catch (RutterException e) {
-                        outcome = "found '" + detected.get() + "', which Rutter cannot read";
+                        outcome = "found '" + detected.get() + "', which Rutter cannot read: " + e.getMessage();
                     }
                 } else {
                     outcome = "found nothing";
