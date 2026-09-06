@@ -172,6 +172,34 @@ class ApiPurityTaskTest {
     }
 
     @Test
+    void rejectsAPublicClassExtendingAMinecraftType(@TempDir Path dir) throws Exception {
+        Path level = writeSource(dir, "net/minecraft/Level.java",
+                "package net.minecraft; public class Level {}");
+        Path leakySupertype = writeSource(dir, "LeakySupertype.java",
+                "public class LeakySupertype extends net.minecraft.Level {}");
+        Path out = compile(dir, level, leakySupertype);
+
+        List<String> findings = ApiPurityScanner.scan(Files.readAllBytes(out.resolve("LeakySupertype.class")));
+
+        assertEquals(1, findings.size(), findings.toString());
+        assertTrue(findings.get(0).contains("supertype"), findings.toString());
+    }
+
+    @Test
+    void rejectsAPublicClassImplementingAMinecraftInterface(@TempDir Path dir) throws Exception {
+        Path tickable = writeSource(dir, "net/minecraft/Tickable.java",
+                "package net.minecraft; public interface Tickable {}");
+        Path leakyInterface = writeSource(dir, "LeakyInterface.java",
+                "public class LeakyInterface implements net.minecraft.Tickable {}");
+        Path out = compile(dir, tickable, leakyInterface);
+
+        List<String> findings = ApiPurityScanner.scan(Files.readAllBytes(out.resolve("LeakyInterface.class")));
+
+        assertEquals(1, findings.size(), findings.toString());
+        assertTrue(findings.get(0).contains("interface"), findings.toString());
+    }
+
+    @Test
     void ignoresNonPublicClassSupertype(@TempDir Path dir) throws Exception {
         Path level = writeSource(dir, "net/minecraft/Level.java",
                 "package net.minecraft; public class Level {}");
