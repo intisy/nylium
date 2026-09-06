@@ -161,6 +161,17 @@ class ApiPurityTaskTest {
     }
 
     @Test
+    void rejectsAMinecraftAnnotationOnAParameterOfAPublicMethod(@TempDir Path dir) throws Exception {
+        Path annotation = writeSource(dir, "net/minecraft/MinecraftAnnotation.java",
+                "package net.minecraft; public @interface MinecraftAnnotation {}");
+        Path annotatedParameter = writeSource(dir, "AnnotatedParameter.java",
+                "public class AnnotatedParameter { public void doThing(@net.minecraft.MinecraftAnnotation String value) {} }");
+        Path out = compile(dir, annotation, annotatedParameter);
+
+        assertFalse(ApiPurityScanner.scan(Files.readAllBytes(out.resolve("AnnotatedParameter.class"))).isEmpty());
+    }
+
+    @Test
     void ignoresNonPublicClassSupertype(@TempDir Path dir) throws Exception {
         Path level = writeSource(dir, "net/minecraft/Level.java",
                 "package net.minecraft; public class Level {}");

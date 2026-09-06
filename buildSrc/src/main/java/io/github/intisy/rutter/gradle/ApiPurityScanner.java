@@ -143,6 +143,13 @@ public final class ApiPurityScanner {
                         check("method " + owner + "." + name + " type annotation", annotationDescriptor);
                         return null;
                     }
+
+                    @Override
+                    public AnnotationVisitor visitParameterAnnotation(int parameter, String annotationDescriptor,
+                                                                       boolean visible) {
+                        check("method " + owner + "." + name + " parameter annotation", annotationDescriptor);
+                        return null;
+                    }
                 };
             }
 
