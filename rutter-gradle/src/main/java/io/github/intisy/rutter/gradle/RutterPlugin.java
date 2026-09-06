@@ -45,13 +45,13 @@ public class RutterPlugin implements Plugin<Project> {
     }
 
     /**
-     * @implNote {@code rutterUniversalJar} and {@code rutterVerifyModules} are registered here
-     *     rather than from {@code afterEvaluate}, so a consumer can reach them with
-     *     {@code tasks.named(...)} from its own script body. Their configuration actions run at
-     *     task realization, which is always later than {@code afterEvaluate}, so calling
-     *     {@link RutterExtension#resolve()} from inside one still sees the complete declaration.
-     *     Which text writers exist is a function of the declared platform union, so registering
-     *     those stays in {@code afterEvaluate}.
+     * @implNote Every task is registered here, so a consumer can reach one with
+     *     {@code tasks.named(...)} from its own script body, but everything that depends on the
+     *     declaration is applied from {@code afterEvaluate} through
+     *     {@code TaskProvider.configure}, which runs immediately when the consumer has already
+     *     realized the task and at realization otherwise. Realization itself is no guarantee of
+     *     ordering: {@code tasks.getByName} and friends realize during script evaluation, so a
+     *     registration action that read the declaration could see it half written.
      */
     @Override
     public void apply(Project project) {
@@ -59,15 +59,11 @@ public class RutterPlugin implements Plugin<Project> {
 
         final RutterExtension rutter = project.getExtensions()
                 .create("rutter", RutterExtension.class, project.getObjects());
-        final List<GeneratedFile> generated = new ArrayList<GeneratedFile>();
         final Configuration embed = embedConfiguration(project);
 
         final TaskProvider<Task> metadata = project.getTasks().register("rutterMetadata", task -> {
             task.setGroup(TASK_GROUP);
             task.setDescription("Generates the Rutter manifest and loader metadata.");
-            if (rutter.getModules().isEmpty()) {
-                failWhenInvokedWithNoModules(task);
-            }
         });
 
         final TaskProvider<RutterVerifyModulesTask> verify = project.getTasks().register(
@@ -76,13 +72,6 @@ public class RutterPlugin implements Plugin<Project> {
             task.setDescription("Rejects module jars that cannot work at runtime.");
             task.getStamp().set(project.getLayout().getBuildDirectory()
                     .file("rutter-internal/rutterVerifyModules.stamp"));
-            if (rutter.getModules().isEmpty()) {
-                failWhenInvokedWithNoModules(task);
-                return;
-            }
-            for (ResolvedModule module : rutter.resolve()) {
-                task.getModules().add(moduleToVerify(project, module));
-            }
         });
 
         final TaskProvider<Jar> universalJar = project.getTasks().register(
@@ -93,41 +82,50 @@ public class RutterPlugin implements Plugin<Project> {
             // FAIL surfaces a colliding entry instead of silently keeping one, per SP-1's lesson.
             jar.setDuplicatesStrategy(DuplicatesStrategy.FAIL);
             jar.dependsOn(verify);
-            if (rutter.getModules().isEmpty()) {
-                failWhenInvokedWithNoModules(jar);
-                return;
-            }
-            List<ResolvedModule> modules = rutter.resolve();
-            embedInto(jar, project, embed);
-            for (GeneratedFile file : generated) {
-                jar.from(file.destination(), copy -> copy.into(file.parentDirectory()));
-            }
-            for (ResolvedModule module : modules) {
-                addModuleJar(jar, module);
-            }
-            if (platformUnion(modules).contains(PlatformId.LAUNCHWRAPPER)) {
-                jar.getManifest().getAttributes().put("TweakClass",
-                        "io.github.intisy.rutter.bootstrap.launchwrapper.RutterTweaker");
-            }
         });
-
-        project.getTasks().named(BasePlugin.ASSEMBLE_TASK_NAME)
-                .configure(assemble -> assemble.dependsOn(universalJar));
 
         project.afterEvaluate(evaluated -> {
             if (rutter.getModules().isEmpty()) {
+                failWhenInvokedWithNoModules(metadata);
+                failWhenInvokedWithNoModules(verify);
+                failWhenInvokedWithNoModules(universalJar);
                 return;
             }
             List<ResolvedModule> modules = rutter.resolve();
             Set<PlatformId> platforms = platformUnion(modules);
             addEmbedDependencies(evaluated, embed, platforms);
-            generated.addAll(writers(evaluated, rutter, modules, platforms));
+            List<GeneratedFile> generated = writers(evaluated, rutter, modules, platforms);
             metadata.configure(task -> {
                 for (GeneratedFile file : generated) {
                     task.dependsOn(file.writer());
                 }
             });
+            verify.configure(task -> {
+                for (ResolvedModule module : modules) {
+                    task.getModules().add(moduleToVerify(evaluated, module));
+                }
+            });
+            universalJar.configure(jar -> fillUniversalJar(jar, evaluated, embed, generated,
+                    modules, platforms));
+            evaluated.getTasks().named(BasePlugin.ASSEMBLE_TASK_NAME)
+                    .configure(assemble -> assemble.dependsOn(universalJar));
         });
+    }
+
+    private void fillUniversalJar(Jar jar, Project project, Configuration embed,
+                                  List<GeneratedFile> generated, List<ResolvedModule> modules,
+                                  Set<PlatformId> platforms) {
+        embedInto(jar, project, embed);
+        for (GeneratedFile file : generated) {
+            jar.from(file.destination(), copy -> copy.into(file.parentDirectory()));
+        }
+        for (ResolvedModule module : modules) {
+            addModuleJar(jar, module);
+        }
+        if (platforms.contains(PlatformId.LAUNCHWRAPPER)) {
+            jar.getManifest().getAttributes().put("TweakClass",
+                    "io.github.intisy.rutter.bootstrap.launchwrapper.RutterTweaker");
+        }
     }
 
     private static List<GeneratedFile> writers(Project project, RutterExtension rutter,
@@ -136,7 +134,7 @@ public class RutterPlugin implements Plugin<Project> {
         List<GeneratedFile> generated = new ArrayList<GeneratedFile>();
         generated.add(writer(project, "rutterManifest", ModuleManifest.RESOURCE,
                 ManifestRenderer.render(modules)));
-        if (platforms.contains(PlatformId.FABRIC)) {
+        if (ResolvedModule.declaresFabric(modules)) {
             generated.add(writer(project, "rutterFabricModJson", "fabric.mod.json",
                     FabricMetadataRenderer.render(rutter.getMod())));
         }
@@ -245,16 +243,16 @@ public class RutterPlugin implements Plugin<Project> {
     }
 
     /**
-     * @implNote The plugin is applied before the {@code rutter { }} block is read, and plain
-     *     introspection such as {@code tasks} realizes every task, so an unconfigured project must
-     *     not fail while a task is being configured; only invoking one of Rutter's own tasks
-     *     should fail, with an actionable message.
+     * @implNote Applying the plugin speculatively has to stay inert, so an unconfigured project
+     *     keeps {@code tasks}, {@code help}, {@code clean} and {@code build} working; that is also
+     *     why {@code assemble} is only wired to the jar once a declaration exists. Only invoking
+     *     one of Rutter's own tasks fails, with an actionable message.
      */
-    private static void failWhenInvokedWithNoModules(Task task) {
-        task.doFirst(ignored -> {
+    private static void failWhenInvokedWithNoModules(TaskProvider<? extends Task> task) {
+        task.configure(configured -> configured.doFirst(ignored -> {
             throw new InvalidUserDataException("Rutter is applied but declares no modules. Add at"
                     + " least one rutter { module('...') { } } block.");
-        });
+        }));
     }
 
     static Set<PlatformId> platformUnion(List<ResolvedModule> modules) {

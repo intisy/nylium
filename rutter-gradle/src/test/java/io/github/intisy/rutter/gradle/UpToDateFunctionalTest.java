@@ -116,6 +116,13 @@ class UpToDateFunctionalTest {
     }
 
     @Test
+    void buildsAndCleansWithoutARutterBlock() throws IOException {
+        unconfiguredFixture();
+        assertTrue(runner("build", "--offline").build().getOutput().contains("BUILD SUCCESSFUL"));
+        assertTrue(runner("clean", "--offline").build().getOutput().contains("BUILD SUCCESSFUL"));
+    }
+
+    @Test
     void failsInvokingRutterMetadataWithoutModules() throws IOException {
         unconfiguredFixture();
         BuildResult result = runner("rutterMetadata").buildAndFail();

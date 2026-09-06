@@ -36,8 +36,8 @@ public abstract class RutterVerifyModulesTask extends DefaultTask {
     public abstract ListProperty<ModuleToVerify> getModules();
 
     /**
-     * @implNote Internal task state, not metadata to embed, so it is kept outside
-     *     {@code build/rutter/} where the generated files the universal jar carries live.
+     * @implNote An empty marker, declared only so this task has an output at all and can therefore
+     *     be up to date instead of reopening every module jar on every build.
      */
     @OutputFile
     public abstract RegularFileProperty getStamp();
