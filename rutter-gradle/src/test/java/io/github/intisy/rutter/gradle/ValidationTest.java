@@ -119,6 +119,17 @@ class ValidationTest {
     }
 
     @Test
+    void rejectsADuplicateModuleName() {
+        Project project = ProjectBuilder.builder().build();
+        project.getPlugins().apply("io.github.intisy.rutter");
+        RutterExtension rutter = (RutterExtension) project.getExtensions().getByName("rutter");
+        rutter.module("1.21.11", module -> { });
+        InvalidUserDataException thrown = assertThrows(InvalidUserDataException.class,
+                () -> rutter.module("1.21.11", module -> { }));
+        assertTrue(thrown.getMessage().contains("1.21.11"));
+    }
+
+    @Test
     void rejectsAModuleWithoutAJar() {
         Project project = ProjectBuilder.builder().build();
         project.getPlugins().apply("io.github.intisy.rutter");

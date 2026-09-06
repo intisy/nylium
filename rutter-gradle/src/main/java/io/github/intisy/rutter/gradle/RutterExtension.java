@@ -12,6 +12,7 @@ import org.gradle.api.Project;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 public class RutterExtension {
@@ -35,7 +36,7 @@ public class RutterExtension {
     }
 
     public void module(String name, Action<? super ModuleSpec> action) {
-        action.execute(modules.maybeCreate(name));
+        action.execute(modules.create(name));
     }
 
     public NamedDomainObjectContainer<ModuleSpec> getModules() {
@@ -47,7 +48,17 @@ public class RutterExtension {
     }
 
     String modulePrefix() {
-        return mod.getModulePrefix().getOrElse(requiredId());
+        String id = requiredId();
+        String prefix = mod.getModulePrefix().getOrNull();
+        if (prefix == null) {
+            return id;
+        }
+        if (prefix.trim().isEmpty()) {
+            throw new InvalidUserDataException("Rutter mod '" + id
+                    + "' declares a blank modulePrefix. Leave it unset to default to the mod id, or"
+                    + " set it to a non-blank value.");
+        }
+        return prefix.trim();
     }
 
     private String requiredId() {
@@ -106,7 +117,7 @@ public class RutterExtension {
             return null;
         }
         try {
-            return Environment.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+            return Environment.valueOf(raw.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new InvalidUserDataException("Rutter module '" + moduleName
                     + "' declares an unknown environment '" + raw + "'. Known environments are "
