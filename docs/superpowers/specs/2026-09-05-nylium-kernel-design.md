@@ -1,9 +1,9 @@
-# Rutter SP-1: Kernel - Design
+# Nylium SP-1: Kernel - Design
 
 **Date:** 2026-09-05
 **Status:** Approved (design), pending spec review
-**Repo:** `minecraft/mods/Rutter` (`intisy/rutter`)
-**Program context:** see `2026-09-05-rutter-program-overview.md`
+**Repo:** `minecraft/mods/Nylium` (`intisy/nylium`)
+**Program context:** see `2026-09-05-nylium-program-overview.md`
 
 ## Goal
 
@@ -29,15 +29,15 @@ be feature-rich.
 
 | Artifact | Purpose | Java | Dependencies |
 | --- | --- | --- | --- |
-| `rutter-api` | Public surface consumers compile against, plus the `Platform` SPI | 8 | none |
-| `rutter-core` | Manifest parsing, version probes, selection, extraction, orchestration | 8 | `rutter-api` |
-| `rutter-bootstrap-launchwrapper` | `ITweaker` entry point | 8 | api, core |
-| `rutter-bootstrap-modlauncher8` | `ITransformationService` entry point | 8 | api, core |
-| `rutter-bootstrap-modlauncher9` | `ITransformationService` plus module layer injection | 8 | api, core |
-| `rutter-bootstrap-fabric` | `PreLaunchEntrypoint` | 8 | api, core |
-| `rutter-testmod` | Verification consumer, not published | per target | api |
+| `nylium-api` | Public surface consumers compile against, plus the `Platform` SPI | 8 | none |
+| `nylium-core` | Manifest parsing, version probes, selection, extraction, orchestration | 8 | `nylium-api` |
+| `nylium-bootstrap-launchwrapper` | `ITweaker` entry point | 8 | api, core |
+| `nylium-bootstrap-modlauncher8` | `ITransformationService` entry point | 8 | api, core |
+| `nylium-bootstrap-modlauncher9` | `ITransformationService` plus module layer injection | 8 | api, core |
+| `nylium-bootstrap-fabric` | `PreLaunchEntrypoint` | 8 | api, core |
+| `nylium-testmod` | Verification consumer, not published | per target | api |
 
-`rutter-api` and `rutter-core` are split so consumers compile against the API alone and the
+`nylium-api` and `nylium-core` are split so consumers compile against the API alone and the
 purity check has a single unambiguous target.
 
 The manifest format is **`.properties`**, read with `java.util.Properties`. Nothing is
@@ -56,11 +56,11 @@ hand-written by a consumer.
 
 ### Layers
 
-- **stage0** = the four `rutter-bootstrap-*` artifacts. Each implements its loader's entry
+- **stage0** = the four `nylium-bootstrap-*` artifacts. Each implements its loader's entry
   contract and its own native version probe, then hands control to the kernel. Minimal by
   design, because this is the code that can never be relocated later.
-- **stage1** = `rutter-core`. All logic, platform-agnostic, testable with no game running.
-- **stage2** = the consumer's precompiled modules. Not Rutter code.
+- **stage1** = `nylium-core`. All logic, platform-agnostic, testable with no game running.
+- **stage2** = the consumer's precompiled modules. Not Nylium code.
 
 ### The seam
 
@@ -82,7 +82,7 @@ public interface Platform {
 }
 ```
 
-`rutter-core` depends on nothing else about a platform. Keeping this interface small is the
+`nylium-core` depends on nothing else about a platform. Keeping this interface small is the
 main design constraint of SP-1: anything that can live in core must live in core, because
 core is written once and each backend is written four times.
 
@@ -100,7 +100,7 @@ Fabric, LaunchWrapper and ModLauncher 8 inherit the immediate defaults; ModLaunc
 both, deferring the runnable and returning the GAME layer's loader.
 
 The known limit of this shape: a `Runnable` cannot hand the platform a typed failure. The kernel's
-`invoke` throws `RutterException`, which propagates inline on three backends and at
+`invoke` throws `NyliumException`, which propagates inline on three backends and at
 `initializeLaunch` on ModLauncher 9. If a platform ever needs to abort a launch with its own error
 type, this becomes a functional interface instead.
 
@@ -132,7 +132,7 @@ jar size.
 
 Selection is deterministic: filter by platform, environment and version, order by constraint
 specificity then declared priority, first match wins. Ambiguity resolves by priority, and then by
-manifest index order; nothing warns about it, because `rutter-core` carries no logging. What
+manifest index order; nothing warns about it, because `nylium-core` carries no logging. What
 "constraint specificity" weighs is documented on `ModuleDescriptor.specificity()` so a consumer can
 predict which of two overlapping modules wins.
 
@@ -171,7 +171,7 @@ Bytecode analysis of ModLauncher 8.1.3 established why.
 (which hosts Minecraft, Forge and mod classes) extends `ClassLoader` directly. Both are parented to
 the system classloader, so they are **siblings** and neither can see the other's classes. Worse,
 `Launcher.run()` calls `initializeTransformationServices` (where a service's `onLoad` fires) *before*
-`buildTransformingClassLoader`, so at the moment Rutter runs the game classloader does not yet
+`buildTransformingClassLoader`, so at the moment Nylium runs the game classloader does not yet
 exist. Mixin configs registered at that point cannot be relied on to reach the transform pipeline
 that is wired into the game loader afterwards.
 
@@ -199,12 +199,12 @@ above: on ModLauncher 8 the service loader is a sibling of the game loader, and 
 SERVICE layer is a parent of GAME.
 
 `IEnvironment.Keys.LAUNCHTARGET` looked like the answer, and it is the right signal, but it is not
-available when Rutter needs it. Instrumented against both real servers, at `onLoad` every
+available when Nylium needs it. Instrumented against both real servers, at `onLoad` every
 argument-derived key is empty (`LAUNCHTARGET`, `GAMEDIR`, `VERSION`, `NAMING`) while the keys the
 `Launcher` constructor sets are present (`MLIMPL_VERSION`, `MLSPEC_VERSION`), so this is a
 population-order fact and not a key-identity or classloader problem. `LAUNCHTARGET` first appears at
 `initialize` on ModLauncher 8 and by `beginScanning` on ModLauncher 9, in both cases as
-`forge_server`, which is after the `onLoad` hook where `RutterKernel.boot` has to select a module.
+`forge_server`, which is after the `onLoad` hook where `NyliumKernel.boot` has to select a module.
 
 Closing this therefore means moving kernel boot to a later hook on both backends: plausible for
 ModLauncher 9, whose `beginScanning` both carries the launch target and is where the module jar is
@@ -241,7 +241,7 @@ omits today.
 **Verification status of the ModLauncher 9+ range.** Forge 1.21.x is verified against a real server
 (1.21.11-61.1.5). Forge 1.17 - 1.20.x is source-compatible and confirmed to compile at release 8,
 but was never run. Its `initializeLaunch` carries only the two-argument form, which is precisely
-the one `RutterMl9LaunchPlugin` overrides: no reflection and no arity probing is involved, and
+the one `NyliumMl9LaunchPlugin` overrides: no reflection and no arity probing is involved, and
 overriding that form alone is what makes one implementation cover the whole ModLauncher 9+ range,
 because 10.2.4 still invokes it after adding the one-argument form. That range is declared
 **unverified** rather than supported until someone runs it. Proving it would mean four more server installs for versions
@@ -267,7 +267,7 @@ of subtle breakage after module layer injection.
 
 ## API purity check
 
-A Gradle task `checkApiPurity`, wired into `check`, ASM-scans the built `rutter-api` jar and
+A Gradle task `checkApiPurity`, wired into `check`, ASM-scans the built `nylium-api` jar and
 fails if `net/minecraft/` appears in any class signature, method signature, field type,
 supertype, generic argument or annotation.
 
@@ -276,7 +276,7 @@ from the first commit, before there is any API worth protecting, because retrofi
 onto an already-leaked API is not practical.
 
 Of the contract's four rules, SP-1 can enforce rules 1 through 3 (purity, semver,
-deprecation cycles). Rule 4, running the previous release's test mod against current Rutter,
+deprecation cycles). Rule 4, running the previous release's test mod against current Nylium,
 has nothing to run against until SP-1 has shipped a release. It is therefore wired up as part
 of SP-2, against SP-1's release as its first baseline.
 
@@ -318,9 +318,9 @@ across that matrix, with `checkApiPurity` green.
 The matrix is a **dispatch-triggered gate, not a per-push one.** Each run provisions four
 Minecraft servers from upstream installers, which is too slow and too network-dependent to sit on
 every push, so `.github/workflows/smoke.yml` is `workflow_dispatch` only and `smoke/test` stays
-gated behind `-PrutterSmoke` locally. The per-push gate is the unit tests, `checkApiPurity` and
+gated behind `-PnyliumSmoke` locally. The per-push gate is the unit tests, `checkApiPurity` and
 `checkClassFileVersion`; a change to a backend has to be signed off by dispatching the smoke
-workflow, or by running `./gradlew :smoke:test -PrutterSmoke` locally.
+workflow, or by running `./gradlew :smoke:test -PnyliumSmoke` locally.
 
 ## Risks
 
@@ -344,7 +344,7 @@ workflow, or by running `./gradlew :smoke:test -PrutterSmoke` locally.
   9 requiring Java 17 at runtime: it shares a `ServiceLoader` file with the ModLauncher 8
   service, and `ServiceLoader` instantiates every listed entry, so a Java 17 class file there
   would throw `UnsupportedClassVersionError` and take down the game on ModLauncher 8. The
-  cost is that no `List.of`, `var` or record may appear anywhere in Rutter's own source.
+  cost is that no `List.of`, `var` or record may appear anywhere in Nylium's own source.
 
 ## Repository and CI
 

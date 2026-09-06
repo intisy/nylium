@@ -1,24 +1,24 @@
 ## Compatibility contract
 
-> A mod that uses only Rutter's API keeps working on newer Minecraft versions by bumping the
-> Rutter version. Nothing else changes.
+> A mod that uses only Nylium's API keeps working on newer Minecraft versions by bumping the
+> Nylium version. Nothing else changes.
 
-That promise is scoped to Rutter's own API surface, because that is the only scope in which it
+That promise is scoped to Nylium's own API surface, because that is the only scope in which it
 can be enforced rather than merely hoped for. Four rules make it real:
 
-1. No `net.minecraft` type ever appears in Rutter's public API, not as a parameter, return,
+1. No `net.minecraft` type ever appears in Nylium's public API, not as a parameter, return,
    field, supertype or generic argument. `checkApiPurity`, a Gradle task wired into `check`,
-   ASM scans the built `rutter-api` jar and fails the build if one leaks in. This is mechanical
+   ASM scans the built `nylium-api` jar and fails the build if one leaks in. This is mechanical
    enforcement, not discipline: a plain `./gradlew build` cannot pass with a leaked type.
 2. Semver on the API. Breaking changes require a major version bump.
 3. Removals require a deprecation cycle spanning at least one major version.
-4. CI compiles and runs the previous release's consumer test mod against current Rutter on the
+4. CI compiles and runs the previous release's consumer test mod against current Nylium on the
    newest Minecraft version. This rule has nothing to run against until a first release exists,
    so it is not yet wired up.
 
 ## The four backends
 
-Rutter ships one universal jar containing a precompiled module per platform and Minecraft
+Nylium ships one universal jar containing a precompiled module per platform and Minecraft
 version range. All four backends below are built and proven on real servers from that single
 jar.
 
@@ -42,7 +42,7 @@ NeoForge support is a separate backend and not part of this kernel yet.
 
 ## The manifest format
 
-A module manifest is a flat `.properties` resource named `rutter-modules.properties`, embedded
+A module manifest is a flat `.properties` resource named `nylium-modules.properties`, embedded
 in the outer jar. `java.util.Properties` ships in the JDK and module descriptors are flat
 records with no nesting, so a hand-rolled parser buys nothing.
 
@@ -69,7 +69,7 @@ module.1.entrypoint=com.example.mymod.Forge116Module
   (`[1.20,1.21.11]`, `[1.20,)`) where `[` and `]` are inclusive and `(` and `)` are exclusive.
 - `environment` (`CLIENT` or `SERVER`), `mixins` (comma-separated config names), `priority`
   (an integer, for resolving ties) and `entrypoint` (a class with a public static
-  `void rutterInit()`) are optional. Note that both ModLauncher backends report SERVER
+  `void nyliumInit()`) are optional. Note that both ModLauncher backends report SERVER
   unconditionally, so a `CLIENT` module cannot match there; see the limitations below.
 - An unrecognised key, or two indices that collide after normalisation (`01` and `1`, for
   example), fail the manifest with a specific error rather than being silently ignored.
@@ -82,16 +82,16 @@ rejected.
 ## Consumer walkthrough
 
 A consumer can apply the Gradle packaging plugin documented below, or wire this up by hand the
-same way `rutter-testmod` does in this repository:
+same way `nylium-testmod` does in this repository:
 
 1. Build one module jar per platform and Minecraft version range you support. Each module's
-   entrypoint class needs a public static `void rutterInit()`.
-2. Write a `rutter-modules.properties` manifest describing every module, as above.
-3. Bundle the manifest, the module jars, and the `rutter-bootstrap-*` artifact for each loader
+   entrypoint class needs a public static `void nyliumInit()`.
+2. Write a `nylium-modules.properties` manifest describing every module, as above.
+3. Bundle the manifest, the module jars, and the `nylium-bootstrap-*` artifact for each loader
    you target into one outer jar, wired to that loader's own entry contract (Fabric's
    `preLaunchEntrypoint`, LaunchWrapper's tweaker, ModLauncher's `ITransformationService`).
-4. Each bootstrap already calls `RutterKernel.boot(platform, classLoader, cacheDirectory)` from
-   its loader's own hook: on boot, Rutter detects the platform and Minecraft version, selects the
+4. Each bootstrap already calls `NyliumKernel.boot(platform, classLoader, cacheDirectory)` from
+   its loader's own hook: on boot, Nylium detects the platform and Minecraft version, selects the
    matching module, extracts it to a hash-keyed cache directory, puts it on the classpath,
    registers its mixin configs, and invokes its entrypoint.
 
@@ -109,7 +109,7 @@ build time:
 ## The Gradle packaging plugin
 
 Everything the consumer walkthrough above does by hand, that is, writing the manifest, wiring
-each loader's own entry contract, and bundling the right Rutter pieces, a Gradle plugin does
+each loader's own entry contract, and bundling the right Nylium pieces, a Gradle plugin does
 from a declaration instead. Nothing is published anywhere yet: this section documents the
 plugin as it exists in this repository, not a coordinate you can resolve today.
 
@@ -117,12 +117,12 @@ plugin as it exists in this repository, not a coordinate you can resolve today.
 
 ```groovy
 plugins {
-    id 'io.github.intisy.rutter'
+    id 'io.github.intisy.nylium'
 }
 ```
 
-The plugin id is `io.github.intisy.rutter`, implemented by `rutter-gradle` in this repository.
-Until a release exists, applying it means building `rutter-gradle` and resolving it from wherever
+The plugin id is `io.github.intisy.nylium`, implemented by `nylium-gradle` in this repository.
+Until a release exists, applying it means building `nylium-gradle` and resolving it from wherever
 you published that build yourself, not from Maven Central or any other public repository.
 
 Applying it also applies Gradle's `base` plugin, which is what gives the generated jar its
@@ -135,33 +135,33 @@ this repository ships, and nothing older has been exercised.
 
 ### Tasks
 
-Every task the plugin registers sits in the `rutter` group, so plain `./gradlew tasks` lists
+Every task the plugin registers sits in the `nylium` group, so plain `./gradlew tasks` lists
 them. A full declaration registers seven.
 
 | Task | Does |
 | --- | --- |
-| `rutterManifest` | writes `rutter-modules.properties` |
-| `rutterFabricModJson`, `rutterTransformationServices`, `rutterLaunchPlugins` | write the loader metadata for the declared platforms, so which of them exist depends on the declaration |
-| `rutterMetadata` | aggregates the writers above |
-| `rutterVerifyModules` | inspects the module jars |
-| `rutterUniversalJar` | assembles the universal jar |
+| `nyliumManifest` | writes `nylium-modules.properties` |
+| `nyliumFabricModJson`, `nyliumTransformationServices`, `nyliumLaunchPlugins` | write the loader metadata for the declared platforms, so which of them exist depends on the declaration |
+| `nyliumMetadata` | aggregates the writers above |
+| `nyliumVerifyModules` | inspects the module jars |
+| `nyliumUniversalJar` | assembles the universal jar |
 
-`rutterUniversalJar` is wired into `assemble`, so a plain `./gradlew build` produces it.
+`nyliumUniversalJar` is wired into `assemble`, so a plain `./gradlew build` produces it.
 
 It is registered eagerly, so a consumer can configure it from its own build script body without
 an `afterEvaluate` wrapper:
 
 ```groovy
-tasks.named('rutterUniversalJar') {
+tasks.named('nyliumUniversalJar') {
     archiveBaseName = 'mymod'
     from('LICENSE')
 }
 ```
 
-### The `rutter { }` surface
+### The `nylium { }` surface
 
 ```groovy
-rutter {
+nylium {
     mod {
         id = 'mymod'
         name = 'My Mod'
@@ -223,7 +223,7 @@ scanning ever runs.
 **`environment()` cannot detect CLIENT on either ModLauncher backend**, so a module declared
 with `environment = 'CLIENT'` never matches while the game is running on `MODLAUNCHER_8` or
 `MODLAUNCHER_9`. Both backends answer SERVER unconditionally, because the loader has not yet
-published its actual launch target at the hook Rutter boots from. Declaring those platforms does
+published its actual launch target at the hook Nylium boots from. Declaring those platforms does
 not by itself break the module: one declaring `platforms = ['FABRIC', 'MODLAUNCHER_9']` with
 `environment = 'CLIENT'` still matches on Fabric.
 
@@ -238,12 +238,12 @@ A module's path inside the jar and its manifest index are both computed, not par
 - **Manifest index:** the order you declare `module('...') { }` blocks in your build script, not
   alphabetical order.
 
-This is the plugin's main advantage over copying `rutter-testmod`'s hand-written build block:
+This is the plugin's main advantage over copying `nylium-testmod`'s hand-written build block:
 those two details are exactly what a hand-rolled build gets to typo or drift on module by module.
 
 ### What is generated per declared platform
 
-- The module manifest (`rutter-modules.properties`) is generated regardless of which platforms
+- The module manifest (`nylium-modules.properties`) is generated regardless of which platforms
   are declared.
 - `fabric.mod.json` is generated only if any module declares `FABRIC`.
 - The shared `META-INF/services/cpw.mods.modlauncher.api.ITransformationService` file gets an
@@ -289,21 +289,21 @@ Rejected while the build is being configured, before any task runs:
   exactly those three and refuses anything else at launch with "Invalid environment type"; the
   value is matched case insensitively and written out lower case.
 - A module `environment` other than `CLIENT` or `SERVER` is rejected. That is a different
-  vocabulary from the mod-level field above, because it is Rutter's own rather than Fabric's.
+  vocabulary from the mod-level field above, because it is Nylium's own rather than Fabric's.
 
-Rejected by `rutterVerifyModules`, which has to open the module jars and therefore runs at
+Rejected by `nyliumVerifyModules`, which has to open the module jars and therefore runs at
 execution time:
 
 - A declared mixin config that is absent from its own module jar is rejected.
-- A module jar that bundles the Rutter API itself is rejected: the universal jar already
+- A module jar that bundles the Nylium API itself is rejected: the universal jar already
   provides it, so a module that shades it in duplicates classes the platform expects to find in
   exactly one place.
-- A module jar carrying its own `rutter-modules.properties` is rejected: only the universal jar
-  carries a manifest, and a module with one has shadowed Rutter in by accident.
+- A module jar carrying its own `nylium-modules.properties` is rejected: only the universal jar
+  carries a manifest, and a module with one has shadowed Nylium in by accident.
 
-Applying the plugin with no `rutter { }` block at all is inert rather than rejected: `tasks`,
+Applying the plugin with no `nylium { }` block at all is inert rather than rejected: `tasks`,
 `help`, `clean` and `build` all still succeed, and `assemble` is wired to the jar only once a
-declaration exists. Invoking one of Rutter's own tasks is what fails, and it fails when the task
+declaration exists. Invoking one of Nylium's own tasks is what fails, and it fails when the task
 runs, telling you to declare a module.
 
 ## Known limitations
@@ -320,7 +320,7 @@ This is a working kernel with three documented gaps, not a finished product:
 - **Neither ModLauncher backend can tell a client from a server.** Both answer `SERVER`, so a
   module declaring `environment=CLIENT` never matches on Forge 1.13+. The loader knows the answer
   and publishes it as its launch target, but measured on real 1.16.5 and 1.21.11 servers that value
-  is not set yet at the hook Rutter boots from; it appears one hook later. Fixing it means booting
+  is not set yet at the hook Nylium boots from; it appears one hook later. Fixing it means booting
   the kernel later on those backends, which needs its own task.
 - **A ModLauncher 9+ module cannot currently be installed by dropping it into `mods/`.**
   `ILaunchPluginService` is discovered only from ModLauncher's boot module layer, which is

@@ -151,7 +151,7 @@ the time `beginScanning` runs, so the resource is discarded. Task 15 must not tr
 the injected jar can apply. A `PLUGIN`-layer class is loaded by
 `SecureModuleClassLoader[LAYER PLUGIN]`, which is not a transforming loader, so mixins would not
 apply to it. `PLUGIN` therefore works for plain classloading only and is the wrong choice for
-Rutter.
+Nylium.
 
 Caveat on the mixin half: the spike proved the *classloader identity*, not an applied mixin.
 Registering a mixin config requires a real mod file, which is out of a spike's scope. The
@@ -199,9 +199,9 @@ SPIKE PROBE launchPlugin.initializeLaunch1Arg layer=GAME hasPayloadModule=true \
 and it remains loadable for every subsequent `handlesClass` call. With `Layer.PLUGIN` the module
 becomes visible one step earlier, at `completeScan`, but on the non-transforming loader.
 
-### Consequence for `RutterKernel.boot`
+### Consequence for `NyliumKernel.boot`
 
-`RutterKernel.boot` as designed classpaths the module, registers its mixin configs, and invokes its
+`NyliumKernel.boot` as designed classpaths the module, registers its mixin configs, and invokes its
 entrypoint synchronously in one call. **That sequence cannot complete in one call on ModLauncher
 9+.** The module hand-off must happen in `beginScanning`, and the entrypoint invocation cannot
 happen until `ILaunchPluginService.initializeLaunch` at the earliest. The `Platform` interface
@@ -247,7 +247,7 @@ java.lang.module.ResolutionException: Module payload reads another module named 
 	at cpw.mods.modlauncher.Launcher.run(Launcher.java:112)
 ```
 
-Rutter's own jar is on the classpath (it has to be, for `ServiceLoader` to find the service). The
+Nylium's own jar is on the classpath (it has to be, for `ServiceLoader` to find the service). The
 payload it injects must be a distinct artifact, or a nested jar, and must not appear on the
 classpath itself.
 

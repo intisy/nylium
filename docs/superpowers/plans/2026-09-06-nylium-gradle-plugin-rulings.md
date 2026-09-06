@@ -1,9 +1,9 @@
-# Rutter Gradle Plugin (SP-2) - Execution Rulings
+# Nylium Gradle Plugin (SP-2) - Execution Rulings
 
 **Date:** 2026-09-06
 **Status:** Complete
-**Plan:** `2026-09-06-rutter-gradle-plugin.md`
-**Spec:** `../specs/2026-09-06-rutter-gradle-plugin-design.md`
+**Plan:** `2026-09-06-nylium-gradle-plugin.md`
+**Spec:** `../specs/2026-09-06-nylium-gradle-plugin-design.md`
 
 Every decision taken during execution without pausing for the owner, with its reasoning and what it
 costs if wrong. Preserved from the execution ledger before the scratch workspace was deleted, so no
@@ -12,7 +12,7 @@ decision dies with it. Written for someone reworking this later who needs to kno
 ## Outcome
 
 Nine tasks, 27 plus 12 commits, 68 tests across 13 classes. The plugin assembles a universal jar
-from a `rutter { }` declaration, replacing the hand-rolled packaging in `rutter-testmod`.
+from a `nylium { }` declaration, replacing the hand-rolled packaging in `nylium-testmod`.
 
 **The acceptance gate is exact, not approximate.** A plugin-built universal jar is byte-identical in
 **every entry** to the hand-rolled reference jar, with an empty allowlist: entry sets, all five
@@ -37,10 +37,10 @@ Worth recording because each was invisible to the layer above it.
    The manifest index is also the final tie-break in module selection, so this was not merely a
    byte-equality problem.
 2. **The verification stamp was shipping inside the universal jar.** Task 7 wrote its `@OutputFile`
-   to `build/rutter/`, which Task 6's jar copies wholesale. No earlier test looked inside an
+   to `build/nylium/`, which Task 6's jar copies wholesale. No earlier test looked inside an
    assembled jar.
 3. **Gradle does not clean a removed task's output.** Confirmed by probe, not assumed. Dropping a
-   platform left its service file in `build/rutter/` and the sweep shipped it, so a consumer who
+   platform left its service file in `build/nylium/` and the sweep shipped it, so a consumer who
    dropped `MODLAUNCHER_9` would have shipped an `ILaunchPluginService` entry naming a class no
    longer in the jar. Fixed structurally by consuming each writer's own output provider.
 4. **Eager task realization produced a silently unbootable jar.** `generated` was filled in
@@ -54,8 +54,8 @@ Worth recording because each was invisible to the layer above it.
 
 ### Pre-flight (before any task ran)
 
-1. **Task 8 does not modify `rutter-testmod/build.gradle`.** Its file list said "modify" but the
-   paths are reachable from `rutter-gradle/build.gradle`. The hand-rolled block is the gate's
+1. **Task 8 does not modify `nylium-testmod/build.gradle`.** Its file list said "modify" but the
+   paths are reachable from `nylium-gradle/build.gradle`. The hand-rolled block is the gate's
    reference artifact and the repo rule is to leave existing code alone.
 2. **A snippet that omits imports is still the implementer's to complete.** Task 6's fragment used a
    bare `File`. Cost if wrong: a local compile error.
@@ -93,7 +93,7 @@ Worth recording because each was invisible to the layer above it.
 ### Behaviour and API surface
 
 13. **Fix the unconfigured-project trap with a targeted guard, not a restructure.** `afterEvaluate`
-    fires for every task invocation, so applying the plugin before writing a `rutter { }` block
+    fires for every task invocation, so applying the plugin before writing a `nylium { }` block
     broke `tasks`, `help`, `projects`, `dependencies` and `clean`. Fail-fast is legitimate only when
     the failing command needs the missing configuration. Guarded the **empty** case only; a
     declared-but-wrong module still fails everywhere, which is desirable.
@@ -111,8 +111,8 @@ Worth recording because each was invisible to the layer above it.
     order, and it would let the entry-set differential absorb a duplicate.
 17. **Assert group and version in the embed check**, since a hardcoded version bypassing
     `pluginVersion()` would otherwise pass and is testable in process.
-18. **Assert `rutter-bootstrap-modlauncher8` absence too**, the one bootstrap the assertions skipped.
-19. **Park the `path()` slash assumption and `RutterPlugin`'s size.** The former defends against a
+18. **Assert `nylium-bootstrap-modlauncher8` absence too**, the one bootstrap the assertions skipped.
+19. **Park the `path()` slash assumption and `NyliumPlugin`'s size.** The former defends against a
     producer that does not exist; the latter had not crossed the threshold.
 
 ### Module verification
@@ -126,11 +126,11 @@ Worth recording because each was invisible to the layer above it.
 22. **Test the scenario the plugin exists for.** Every fixture set `jar` from a static file, none
     from a task output, so the implicit task dependency rested on documentation. Baritone will write
     `tasks.named('remapJar').flatMap { it.archiveFile }`, and without propagation verification runs
-    against a jar that does not exist yet. The required test invokes `rutterVerifyModules` **without
+    against a jar that does not exist yet. The required test invokes `nyliumVerifyModules` **without
     naming the producer** and asserts the producer executed, so it proves propagation rather than
     absence of a crash.
 23. **Match the sibling task's `UncheckedIOException` wrapping.**
-24. **Test that `.../rutter/apiextra/Foo.class` is accepted**, since the trailing slash in
+24. **Test that `.../nylium/apiextra/Foo.class` is accepted**, since the trailing slash in
     `API_PREFIX` is exactly the character a later simplification removes.
 
 ### The acceptance gate
@@ -141,16 +141,16 @@ Worth recording because each was invisible to the layer above it.
     api and core classes, successfully. Before the fix such a module landed at the wrong index;
     after it, it disappeared. Fixed with `whenObjectAdded` plus a size cross-check.
 26. **Scope the publication to the six subprojects that need it.** In the shared `subprojects` block
-    it created a second publication at identical coordinates for `rutter-gradle` alongside
+    it created a second publication at identical coordinates for `nylium-gradle` alongside
     `java-gradle-plugin`'s own, and would have published the test fixture and smoke harness.
 27. **Compare entry *content*, not just entry names.** The gate content-compared nine entries and
-    name-compared hundreds of class entries, so a stale `rutter-core` would have passed. Until this
+    name-compared hundreds of class entries, so a stale `nylium-core` would have passed. Until this
     landed, the honest claim was "reproduces the artifact's shape". A named allowlist was required
     for any legitimate difference; it is empty.
 28. **Assert the `TweakClass` attribute specifically**, since the manifest is excluded from the byte
     comparison and a misspelling there breaks the Forge 1.7.10 boot path with a green gate.
-29-32. **Four one-line Minors:** remove the `rutter.test.version` property nothing reads; put the
-    `build/rutter` contract where the next author will read it; give the configuration-cache test its
+29-32. **Four one-line Minors:** remove the `nylium.test.version` property nothing reads; put the
+    `build/nylium` contract where the next author will read it; give the configuration-cache test its
     own fixture directory; compare sorted entry-name lists rather than sets.
 33. **Park two Minors.** Unifying `MODULE_IDS` guards a scenario `entrySetsAreEqual` still catches;
     collecting every byte mismatch is polish since the message names the path.
@@ -170,7 +170,7 @@ Worth recording because each was invisible to the layer above it.
     never emit a `fabric.mod.json`, and rejecting their build would be a **new** failure mode
     introduced by a hardening fix. `environment` stays unconditional, since that value only ever
     reaches Fabric metadata.
-    - **Accepted:** `:rutter-gradle:test` is never up to date, because the reference jar is not
+    - **Accepted:** `:nylium-gradle:test` is never up to date, because the reference jar is not
       reproducible between runs (SP-1's `resources.text.fromString` defect still lives in the
       hand-rolled block, which must stay hand-rolled or the differential becomes circular). A gate
       that always runs beats one that can silently skip.

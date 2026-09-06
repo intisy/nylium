@@ -1,22 +1,22 @@
-# Rutter SP-1 Kernel Implementation Plan
+# Nylium SP-1 Kernel Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the Rutter dispatch kernel so a single jar boots on LaunchWrapper, ModLauncher 8, ModLauncher 9+ and Fabric, detects the running Minecraft version, and loads the matching precompiled module.
+**Goal:** Build the Nylium dispatch kernel so a single jar boots on LaunchWrapper, ModLauncher 8, ModLauncher 9+ and Fabric, detects the running Minecraft version, and loads the matching precompiled module.
 
-**Architecture:** Three layers. Four tiny `rutter-bootstrap-*` artifacts (stage0) each implement one loader's entry contract and hand control to `rutter-core` (stage1), which parses an embedded `.properties` manifest, runs a version probe chain, selects a module, extracts it to a hash-keyed cache, and asks the backend to classpath it and register its mixin configs. The consumer's precompiled modules are stage2 and are not Rutter code. `rutter-api` holds the public surface and the `Platform` SPI, and is guarded by an ASM purity check that forbids any `net.minecraft` reference.
+**Architecture:** Three layers. Four tiny `nylium-bootstrap-*` artifacts (stage0) each implement one loader's entry contract and hand control to `nylium-core` (stage1), which parses an embedded `.properties` manifest, runs a version probe chain, selects a module, extracts it to a hash-keyed cache, and asks the backend to classpath it and register its mixin configs. The consumer's precompiled modules are stage2 and are not Nylium code. `nylium-api` holds the public surface and the `Platform` SPI, and is guarded by an ASM purity check that forbids any `net.minecraft` reference.
 
-**Tech Stack:** Java 8 bytecode throughout, Gradle 8 with the Groovy DSL, JUnit 5, ASM 9.7, and the loader APIs as plain Maven artifacts (launchwrapper, modlauncher, fabric-loader, spongepowered mixin). No Minecraft toolchain is needed to compile Rutter itself, which is why the build stays offline and fast; only the opt-in smoke tests touch real servers.
+**Tech Stack:** Java 8 bytecode throughout, Gradle 8 with the Groovy DSL, JUnit 5, ASM 9.7, and the loader APIs as plain Maven artifacts (launchwrapper, modlauncher, fabric-loader, spongepowered mixin). No Minecraft toolchain is needed to compile Nylium itself, which is why the build stays offline and fast; only the opt-in smoke tests touch real servers.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-rutter-kernel-design.md`
-**Program context:** `docs/superpowers/specs/2026-09-05-rutter-program-overview.md`
+**Spec:** `docs/superpowers/specs/2026-09-05-nylium-kernel-design.md`
+**Program context:** `docs/superpowers/specs/2026-09-05-nylium-program-overview.md`
 
 ## Global Constraints
 
-- **Package root:** `io.github.intisy.rutter`. Maven group `io.github.intisy.rutter`.
-- **Java floor: every artifact emits Java 8 bytecode** (`options.release = 8`), the ModLauncher 9+ bootstrap included. ModLauncher 8 and 9 share one `ServiceLoader` file and `ServiceLoader` instantiates every entry, so a Java 17 class file there would throw `UnsupportedClassVersionError` and kill the game on ModLauncher 8. Consequence: no `List.of`, no `var`, no records anywhere in Rutter's own source.
-- **Zero runtime dependencies in `rutter-api` and `rutter-core`.** Not Gson, not Guava, not Apache Commons. Nothing is guaranteed on the classpath at stage0. Loader APIs are `compileOnly` in the bootstraps.
-- **No `net.minecraft` anywhere in `rutter-api`** - not as a parameter, return, field, supertype, generic argument or annotation. Enforced by `checkApiPurity` (Task 10).
+- **Package root:** `io.github.intisy.nylium`. Maven group `io.github.intisy.nylium`.
+- **Java floor: every artifact emits Java 8 bytecode** (`options.release = 8`), the ModLauncher 9+ bootstrap included. ModLauncher 8 and 9 share one `ServiceLoader` file and `ServiceLoader` instantiates every entry, so a Java 17 class file there would throw `UnsupportedClassVersionError` and kill the game on ModLauncher 8. Consequence: no `List.of`, no `var`, no records anywhere in Nylium's own source.
+- **Zero runtime dependencies in `nylium-api` and `nylium-core`.** Not Gson, not Guava, not Apache Commons. Nothing is guaranteed on the classpath at stage0. Loader APIs are `compileOnly` in the bootstraps.
+- **No `net.minecraft` anywhere in `nylium-api`** - not as a parameter, return, field, supertype, generic argument or annotation. Enforced by `checkApiPurity` (Task 10).
 - **Manifest format is `.properties`**, read with `Properties.load(Reader)` and an explicit UTF-8 reader. The `load(InputStream)` overload is ISO-8859-1 and would mangle non-ASCII paths.
 - **Two Minecraft version schemes must both order correctly:** legacy `1.21.11` and year-based `26.2`. Any year-based version is newer than any `1.x`.
 - **All four bootstraps coexist in one outer jar**, so each must be inert when its platform is absent. Guard every platform class access behind a `Class.forName` capability check.
@@ -30,23 +30,23 @@
 ## File Structure
 
 ```
-Rutter/
+Nylium/
   settings.gradle                                    # subproject includes, foojay toolchain resolver
   build.gradle                                       # shared subprojects{} config, Java release, repos
   gradle.properties                                  # version, jvmargs
   gradlew, gradlew.bat, gradle/wrapper/              # copied from baritone
   buildSrc/
     build.gradle                                     # ASM dependency for the purity task
-    src/main/java/io/github/intisy/rutter/gradle/
+    src/main/java/io/github/intisy/nylium/gradle/
       ApiPurityTask.java                             # Task 10: ASM scan, fails on net/minecraft
-  rutter-api/src/main/java/io/github/intisy/rutter/api/
+  nylium-api/src/main/java/io/github/intisy/nylium/api/
     PlatformId.java                                  # LAUNCHWRAPPER, MODLAUNCHER_8, MODLAUNCHER_9, FABRIC
     Environment.java                                 # CLIENT, SERVER
     McVersion.java                                   # parse + order both schemes
     Platform.java                                    # the five-method SPI backends implement
-    RutterException.java                             # base
+    NyliumException.java                             # base
     NoCompatibleModuleException.java                 # the diagnostic-carrying miss
-  rutter-core/src/main/java/io/github/intisy/rutter/core/
+  nylium-core/src/main/java/io/github/intisy/nylium/core/
     VersionRange.java                                # [a,b] (a,b) [a,) and exact
     ModuleDescriptor.java                            # one manifest record
     ModuleManifest.java                              # Properties -> List<ModuleDescriptor>
@@ -56,16 +56,16 @@ Rutter/
     probe/VersionJsonProbe.java                      # version.json off the classpath
     probe/MarkerClassProbe.java                      # class presence -> version
     probe/ProbeChain.java                            # ordered fallthrough
-    RutterKernel.java                                # boot(Platform): the orchestrator
-  rutter-bootstrap-fabric/    src/main/java/.../bootstrap/fabric/FabricPlatform.java + RutterPreLaunch.java
-  rutter-bootstrap-launchwrapper/ src/main/java/.../bootstrap/launchwrapper/LaunchWrapperPlatform.java + RutterTweaker.java
-  rutter-bootstrap-modlauncher8/  src/main/java/.../bootstrap/ml8/Ml8Platform.java + RutterMl8Service.java
-  rutter-bootstrap-modlauncher9/  src/main/java/.../bootstrap/ml9/Ml9Platform.java + RutterMl9Service.java
-  rutter-testmod/                                    # verification consumer + universal jar assembly
-  smoke/src/test/java/io/github/intisy/rutter/smoke/  # server-launch harness, one test per backend
+    NyliumKernel.java                                # boot(Platform): the orchestrator
+  nylium-bootstrap-fabric/    src/main/java/.../bootstrap/fabric/FabricPlatform.java + NyliumPreLaunch.java
+  nylium-bootstrap-launchwrapper/ src/main/java/.../bootstrap/launchwrapper/LaunchWrapperPlatform.java + NyliumTweaker.java
+  nylium-bootstrap-modlauncher8/  src/main/java/.../bootstrap/ml8/Ml8Platform.java + NyliumMl8Service.java
+  nylium-bootstrap-modlauncher9/  src/main/java/.../bootstrap/ml9/Ml9Platform.java + NyliumMl9Service.java
+  nylium-testmod/                                    # verification consumer + universal jar assembly
+  smoke/src/test/java/io/github/intisy/nylium/smoke/  # server-launch harness, one test per backend
 ```
 
-**Responsibility split rationale:** `rutter-core` is written once; each backend is written four times. So every piece of logic that is not literally a loader API call lives in core. The `Platform` SPI staying at five methods is the mechanism that enforces this, and it is why the probe chain's generic probes are in core while only the native probe is per-backend.
+**Responsibility split rationale:** `nylium-core` is written once; each backend is written four times. So every piece of logic that is not literally a loader API call lives in core. The `Platform` SPI staying at five methods is the mechanism that enforces this, and it is why the probe chain's generic probes are in core while only the native probe is per-backend.
 
 ---
 
@@ -73,9 +73,9 @@ Rutter/
 
 **Files:**
 - Create: `settings.gradle`, `build.gradle`, `gradle.properties`
-- Create: `rutter-api/build.gradle`, `rutter-core/build.gradle`
+- Create: `nylium-api/build.gradle`, `nylium-core/build.gradle`
 - Copy: `gradlew`, `gradlew.bat`, `gradle/wrapper/` from `../../../vendor/baritone`
-- Test: `rutter-api/src/test/java/io/github/intisy/rutter/api/BuildSanityTest.java`
+- Test: `nylium-api/src/test/java/io/github/intisy/nylium/api/BuildSanityTest.java`
 
 **Interfaces:**
 - Produces: a Gradle build where `./gradlew build` compiles every subproject at its declared Java release and runs JUnit 5 tests. Later tasks add subprojects to `settings.gradle` as they are created.
@@ -85,7 +85,7 @@ Rutter/
 Generating a wrapper needs a local Gradle install; copying a known-good one does not.
 
 ```bash
-cd "F:/Documents/GitHub/intisy/minecraft/mods/Rutter"
+cd "F:/Documents/GitHub/intisy/minecraft/mods/Nylium"
 cp -r ../../../vendor/baritone/gradle .
 cp ../../../vendor/baritone/gradlew ../../../vendor/baritone/gradlew.bat .
 ls gradle/wrapper/
@@ -112,10 +112,10 @@ plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
 }
 
-rootProject.name = 'rutter'
+rootProject.name = 'nylium'
 
-include 'rutter-api'
-include 'rutter-core'
+include 'nylium-api'
+include 'nylium-core'
 ```
 
 - [ ] **Step 4: Write the root `build.gradle`**
@@ -125,7 +125,7 @@ subprojects {
     apply plugin: 'java-library'
     apply plugin: 'maven-publish'
 
-    group = 'io.github.intisy.rutter'
+    group = 'io.github.intisy.nylium'
     version = rootProject.version
 
     repositories {
@@ -147,7 +147,7 @@ subprojects {
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
-        options.release = (project.findProperty('rutterJavaRelease') ?: '8') as Integer
+        options.release = (project.findProperty('nyliumJavaRelease') ?: '8') as Integer
     }
 
     dependencies {
@@ -163,26 +163,26 @@ subprojects {
 }
 ```
 
-The toolchain is 21 while `release` is 8: the build runs on a modern JDK but emits Java 8 bytecode, which is the requirement. `rutterJavaRelease` lets the ModLauncher 9+ backend opt up to 17 from its own `gradle.properties` in Task 14.
+The toolchain is 21 while `release` is 8: the build runs on a modern JDK but emits Java 8 bytecode, which is the requirement. `nyliumJavaRelease` lets the ModLauncher 9+ backend opt up to 17 from its own `gradle.properties` in Task 14.
 
 - [ ] **Step 5: Write the two subproject build files**
 
-`rutter-api/build.gradle`:
+`nylium-api/build.gradle`:
 ```groovy
-// intentionally empty: rutter-api must have zero dependencies
+// intentionally empty: nylium-api must have zero dependencies
 ```
 
-`rutter-core/build.gradle`:
+`nylium-core/build.gradle`:
 ```groovy
 dependencies {
-    api project(':rutter-api')
+    api project(':nylium-api')
 }
 ```
 
 - [ ] **Step 6: Write the build sanity test**
 
 ```java
-package io.github.intisy.rutter.api;
+package io.github.intisy.nylium.api;
 
 import org.junit.jupiter.api.Test;
 
@@ -236,7 +236,7 @@ This is the spec's highest-risk item and it runs before any kernel code, because
 - [ ] **Step 1: Create the spike subproject**
 
 ```bash
-cd "F:/Documents/GitHub/intisy/minecraft/mods/Rutter"
+cd "F:/Documents/GitHub/intisy/minecraft/mods/Nylium"
 mkdir -p spike/ml9/src/main/java/spike
 mkdir -p spike/ml9/src/main/resources/META-INF/services
 ```
@@ -245,7 +245,7 @@ Add to `settings.gradle`: `include 'spike:ml9'`
 
 `spike/ml9/build.gradle`:
 ```groovy
-rutterJavaRelease = 17
+nyliumJavaRelease = 17
 
 dependencies {
     compileOnly 'cpw.mods:modlauncher:10.0.9'
@@ -254,7 +254,7 @@ dependencies {
 }
 ```
 
-If `rutterJavaRelease = 17` as a script assignment does not resolve (it is a project property, not an extension), put `rutterJavaRelease=17` in `spike/ml9/gradle.properties` instead. Confirm which works and record it, because Task 14 needs the same mechanism.
+If `nyliumJavaRelease = 17` as a script assignment does not resolve (it is a project property, not an extension), put `nyliumJavaRelease=17` in `spike/ml9/gradle.properties` instead. Confirm which works and record it, because Task 14 needs the same mechanism.
 
 - [ ] **Step 2: Write the candidate transformation service**
 
@@ -275,7 +275,7 @@ public class SpikeService implements ITransformationService {
 
     @Override
     public String name() {
-        return "rutter-spike";
+        return "nylium-spike";
     }
 
     @Override
@@ -289,7 +289,7 @@ public class SpikeService implements ITransformationService {
 
     @Override
     public List<Resource> beginScanning(IEnvironment environment) {
-        Path jar = Paths.get(System.getProperty("rutter.spike.jar"));
+        Path jar = Paths.get(System.getProperty("nylium.spike.jar"));
         SecureJar secure = SecureJar.from(jar);
         System.out.println("SPIKE beginScanning offering " + secure.name());
         return List.of(new Resource(IModuleLayerManager.Layer.GAME, List.of(secure)));
@@ -310,8 +310,8 @@ spike.SpikeService
 - [ ] **Step 3: Build a trivial payload jar to inject**
 
 ```bash
-mkdir -p /tmp/rutter-spike/payload
-cat > /tmp/rutter-spike/Payload.java <<'JAVA'
+mkdir -p /tmp/nylium-spike/payload
+cat > /tmp/nylium-spike/Payload.java <<'JAVA'
 package payload;
 public class Payload {
     public static void announce() {
@@ -319,13 +319,13 @@ public class Payload {
     }
 }
 JAVA
-javac -d /tmp/rutter-spike/payload /tmp/rutter-spike/Payload.java
-jar cf /tmp/rutter-spike/payload.jar -C /tmp/rutter-spike/payload .
+javac -d /tmp/nylium-spike/payload /tmp/nylium-spike/Payload.java
+jar cf /tmp/nylium-spike/payload.jar -C /tmp/nylium-spike/payload .
 ```
 
 - [ ] **Step 4: Run against a real NeoForge server and a real Forge server**
 
-Install a NeoForge 1.21.11 server and a Forge 1.21.11 server into separate directories. Put the spike jar and `payload.jar` on the launch classpath, and set `-Drutter.spike.jar=/tmp/rutter-spike/payload.jar`.
+Install a NeoForge 1.21.11 server and a Forge 1.21.11 server into separate directories. Put the spike jar and `payload.jar` on the launch classpath, and set `-Dnylium.spike.jar=/tmp/nylium-spike/payload.jar`.
 
 Record for each of the two:
 - Does `beginScanning` get called, and is the `Resource`/`Layer` API shape as written above?
@@ -342,38 +342,38 @@ If neither layer works on some Forge range, record that range as **unsupported**
 - [ ] **Step 6: Delete the spike, keep the findings**
 
 ```bash
-cd "F:/Documents/GitHub/intisy/minecraft/mods/Rutter"
+cd "F:/Documents/GitHub/intisy/minecraft/mods/Nylium"
 rm -rf spike
 # remove the include 'spike:ml9' line from settings.gradle
-rm -rf /tmp/rutter-spike
+rm -rf /tmp/nylium-spike
 git add -A
 git commit -m "docs: record modlauncher 9 module layer injection findings"
 ```
 
 ---
 
-## Task 3: rutter-api foundations and McVersion ordering
+## Task 3: nylium-api foundations and McVersion ordering
 
 **Files:**
-- Create: `rutter-api/src/main/java/io/github/intisy/rutter/api/PlatformId.java`
-- Create: `rutter-api/src/main/java/io/github/intisy/rutter/api/Environment.java`
-- Create: `rutter-api/src/main/java/io/github/intisy/rutter/api/RutterException.java`
-- Create: `rutter-api/src/main/java/io/github/intisy/rutter/api/McVersion.java`
-- Create: `rutter-api/src/main/java/io/github/intisy/rutter/api/Platform.java`
-- Test: `rutter-api/src/test/java/io/github/intisy/rutter/api/McVersionTest.java`
+- Create: `nylium-api/src/main/java/io/github/intisy/nylium/api/PlatformId.java`
+- Create: `nylium-api/src/main/java/io/github/intisy/nylium/api/Environment.java`
+- Create: `nylium-api/src/main/java/io/github/intisy/nylium/api/NyliumException.java`
+- Create: `nylium-api/src/main/java/io/github/intisy/nylium/api/McVersion.java`
+- Create: `nylium-api/src/main/java/io/github/intisy/nylium/api/Platform.java`
+- Test: `nylium-api/src/test/java/io/github/intisy/nylium/api/McVersionTest.java`
 
 **Interfaces:**
 - Produces:
   - `enum PlatformId { LAUNCHWRAPPER, MODLAUNCHER_8, MODLAUNCHER_9, FABRIC }`
   - `enum Environment { CLIENT, SERVER }`
-  - `class RutterException extends RuntimeException` with `(String)` and `(String, Throwable)` constructors
+  - `class NyliumException extends RuntimeException` with `(String)` and `(String, Throwable)` constructors
   - `final class McVersion implements Comparable<McVersion>` with `static McVersion parse(String)`, `String raw()`, `boolean isYearBased()`
   - `interface Platform` with `PlatformId id()`, `Environment environment()`, `void addToClasspath(Path)`, `void registerMixinConfig(String)`, `Optional<String> nativeVersionProbe()`
 
 - [ ] **Step 1: Write the failing McVersion test**
 
 ```java
-package io.github.intisy.rutter.api;
+package io.github.intisy.nylium.api;
 
 import org.junit.jupiter.api.Test;
 
@@ -434,9 +434,9 @@ class McVersionTest {
 
     @Test
     void rejectsUnparseableVersions() {
-        assertThrows(RutterException.class, () -> McVersion.parse("25w14a"));
-        assertThrows(RutterException.class, () -> McVersion.parse("1.21.11-pre1"));
-        assertThrows(RutterException.class, () -> McVersion.parse(""));
+        assertThrows(NyliumException.class, () -> McVersion.parse("25w14a"));
+        assertThrows(NyliumException.class, () -> McVersion.parse("1.21.11-pre1"));
+        assertThrows(NyliumException.class, () -> McVersion.parse(""));
     }
 }
 ```
@@ -445,13 +445,13 @@ Snapshots and pre-releases throw rather than guess. A silently mis-ordered snaps
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `./gradlew :rutter-api:test --console=plain`
+Run: `./gradlew :nylium-api:test --console=plain`
 Expected: FAIL, cannot find symbol `McVersion`.
 
 - [ ] **Step 3: Write the enums and exception**
 
 ```java
-package io.github.intisy.rutter.api;
+package io.github.intisy.nylium.api;
 
 public enum PlatformId {
     LAUNCHWRAPPER,
@@ -462,7 +462,7 @@ public enum PlatformId {
 ```
 
 ```java
-package io.github.intisy.rutter.api;
+package io.github.intisy.nylium.api;
 
 public enum Environment {
     CLIENT,
@@ -471,15 +471,15 @@ public enum Environment {
 ```
 
 ```java
-package io.github.intisy.rutter.api;
+package io.github.intisy.nylium.api;
 
-public class RutterException extends RuntimeException {
+public class NyliumException extends RuntimeException {
 
-    public RutterException(String message) {
+    public NyliumException(String message) {
         super(message);
     }
 
-    public RutterException(String message, Throwable cause) {
+    public NyliumException(String message, Throwable cause) {
         super(message, cause);
     }
 }
@@ -488,7 +488,7 @@ public class RutterException extends RuntimeException {
 - [ ] **Step 4: Write McVersion**
 
 ```java
-package io.github.intisy.rutter.api;
+package io.github.intisy.nylium.api;
 
 import java.util.Arrays;
 
@@ -508,24 +508,24 @@ public final class McVersion implements Comparable<McVersion> {
 
     public static McVersion parse(String raw) {
         if (raw == null || raw.isEmpty()) {
-            throw new RutterException("Minecraft version is empty");
+            throw new NyliumException("Minecraft version is empty");
         }
         String[] parts = raw.split("\\.", -1);
         int[] components = new int[COMPARED_COMPONENTS];
         for (int i = 0; i < parts.length; i++) {
             if (i >= COMPARED_COMPONENTS) {
-                throw new RutterException("Minecraft version has too many components: " + raw);
+                throw new NyliumException("Minecraft version has too many components: " + raw);
             }
             try {
                 components[i] = Integer.parseInt(parts[i]);
             } catch (NumberFormatException e) {
-                throw new RutterException(
-                        "Unrecognised Minecraft version '" + raw + "'. Rutter understands release "
+                throw new NyliumException(
+                        "Unrecognised Minecraft version '" + raw + "'. Nylium understands release "
                                 + "versions only (for example 1.21.11 or 26.2), not snapshots or "
                                 + "pre-releases.", e);
             }
             if (components[i] < 0) {
-                throw new RutterException("Minecraft version component is negative: " + raw);
+                throw new NyliumException("Minecraft version component is negative: " + raw);
             }
         }
         return new McVersion(raw, components, components[0] != 1);
@@ -572,13 +572,13 @@ public final class McVersion implements Comparable<McVersion> {
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `./gradlew :rutter-api:test --console=plain`
+Run: `./gradlew :nylium-api:test --console=plain`
 Expected: PASS, all nine tests.
 
 - [ ] **Step 6: Write the Platform SPI**
 
 ```java
-package io.github.intisy.rutter.api;
+package io.github.intisy.nylium.api;
 
 import java.nio.file.Path;
 import java.util.Optional;
@@ -614,20 +614,20 @@ git commit -m "feat(api): platform spi and minecraft version ordering across bot
 ## Task 4: VersionRange
 
 **Files:**
-- Create: `rutter-core/src/main/java/io/github/intisy/rutter/core/VersionRange.java`
-- Test: `rutter-core/src/test/java/io/github/intisy/rutter/core/VersionRangeTest.java`
+- Create: `nylium-core/src/main/java/io/github/intisy/nylium/core/VersionRange.java`
+- Test: `nylium-core/src/test/java/io/github/intisy/nylium/core/VersionRangeTest.java`
 
 **Interfaces:**
-- Consumes: `McVersion.parse`, `McVersion.compareTo`, `RutterException` from Task 3.
+- Consumes: `McVersion.parse`, `McVersion.compareTo`, `NyliumException` from Task 3.
 - Produces: `final class VersionRange` with `static VersionRange parse(String)`, `boolean contains(McVersion)`, `String raw()`. Ranges use Maven and Forge `mods.toml` bracket notation, which is the notation this audience already knows.
 
 - [ ] **Step 1: Write the failing test**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.McVersion;
-import io.github.intisy.rutter.api.RutterException;
+import io.github.intisy.nylium.api.McVersion;
+import io.github.intisy.nylium.api.NyliumException;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -683,26 +683,26 @@ class VersionRangeTest {
 
     @Test
     void rejectsMalformedRanges() {
-        assertThrows(RutterException.class, () -> VersionRange.parse("[1.20"));
-        assertThrows(RutterException.class, () -> VersionRange.parse("[1.20,1.19]"));
-        assertThrows(RutterException.class, () -> VersionRange.parse(""));
-        assertThrows(RutterException.class, () -> VersionRange.parse("[,]"));
+        assertThrows(NyliumException.class, () -> VersionRange.parse("[1.20"));
+        assertThrows(NyliumException.class, () -> VersionRange.parse("[1.20,1.19]"));
+        assertThrows(NyliumException.class, () -> VersionRange.parse(""));
+        assertThrows(NyliumException.class, () -> VersionRange.parse("[,]"));
     }
 }
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: FAIL, cannot find symbol `VersionRange`.
 
 - [ ] **Step 3: Write VersionRange**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.McVersion;
-import io.github.intisy.rutter.api.RutterException;
+import io.github.intisy.nylium.api.McVersion;
+import io.github.intisy.nylium.api.NyliumException;
 
 public final class VersionRange {
 
@@ -723,7 +723,7 @@ public final class VersionRange {
 
     public static VersionRange parse(String raw) {
         if (raw == null || raw.trim().isEmpty()) {
-            throw new RutterException("Version range is empty");
+            throw new NyliumException("Version range is empty");
         }
         String text = raw.trim();
         char first = text.charAt(0);
@@ -778,7 +778,7 @@ public final class VersionRange {
         return raw;
     }
 
-    private static final class VersionRangeException extends RutterException {
+    private static final class VersionRangeException extends NyliumException {
         VersionRangeException(String raw, String problem) {
             super("Cannot read version range '" + raw + "': " + problem
                     + ". Use an exact version (1.21.11) or bracket notation ([1.20,1.21) or [1.20,)).");
@@ -789,7 +789,7 @@ public final class VersionRange {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: PASS, all seven tests.
 
 - [ ] **Step 5: Commit**
@@ -803,17 +803,17 @@ git commit -m "feat(core): version range parsing in bracket notation"
 ## Task 5: ModuleDescriptor and manifest parsing
 
 **Files:**
-- Create: `rutter-core/src/main/java/io/github/intisy/rutter/core/ModuleDescriptor.java`
-- Create: `rutter-core/src/main/java/io/github/intisy/rutter/core/ModuleManifest.java`
-- Test: `rutter-core/src/test/java/io/github/intisy/rutter/core/ModuleManifestTest.java`
+- Create: `nylium-core/src/main/java/io/github/intisy/nylium/core/ModuleDescriptor.java`
+- Create: `nylium-core/src/main/java/io/github/intisy/nylium/core/ModuleManifest.java`
+- Test: `nylium-core/src/test/java/io/github/intisy/nylium/core/ModuleManifestTest.java`
 
 **Interfaces:**
-- Consumes: `VersionRange.parse` (Task 4), `PlatformId`, `Environment`, `RutterException` (Task 3).
+- Consumes: `VersionRange.parse` (Task 4), `PlatformId`, `Environment`, `NyliumException` (Task 3).
 - Produces:
   - `final class ModuleDescriptor` with `String path()`, `Set<PlatformId> platforms()`, `VersionRange minecraft()`, `Optional<Environment> environment()`, `List<String> mixinConfigs()`, `int priority()`, `int specificity()`
   - `final class ModuleManifest` with `static ModuleManifest read(Reader)`, `static ModuleManifest readFrom(ClassLoader, String resource)`, `List<ModuleDescriptor> modules()`
 
-The manifest resource path is fixed at `rutter-modules.properties`.
+The manifest resource path is fixed at `nylium-modules.properties`.
 
 Key shape, one indexed block per module:
 ```properties
@@ -831,11 +831,11 @@ module.0.priority=0
 - [ ] **Step 1: Write the failing test**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.Environment;
-import io.github.intisy.rutter.api.PlatformId;
-import io.github.intisy.rutter.api.RutterException;
+import io.github.intisy.nylium.api.Environment;
+import io.github.intisy.nylium.api.PlatformId;
+import io.github.intisy.nylium.api.NyliumException;
 import org.junit.jupiter.api.Test;
 
 import java.io.StringReader;
@@ -929,18 +929,18 @@ class ModuleManifestTest {
 
     @Test
     void rejectsAnEmptyManifest() {
-        assertThrows(RutterException.class, () -> read("\n"));
+        assertThrows(NyliumException.class, () -> read("\n"));
     }
 
     @Test
     void rejectsAModuleMissingRequiredFields() {
-        assertThrows(RutterException.class, () -> read("module.0.platforms=FABRIC\n"));
-        assertThrows(RutterException.class, () -> read("module.0.path=a.jar\n"));
+        assertThrows(NyliumException.class, () -> read("module.0.platforms=FABRIC\n"));
+        assertThrows(NyliumException.class, () -> read("module.0.path=a.jar\n"));
     }
 
     @Test
     void rejectsAnUnknownPlatformName() {
-        RutterException thrown = assertThrows(RutterException.class, () -> read(
+        NyliumException thrown = assertThrows(NyliumException.class, () -> read(
                 "module.0.path=a.jar\nmodule.0.platforms=QUILT\nmodule.0.minecraft=1.21.11\n"));
         assertTrue(thrown.getMessage().contains("QUILT"));
     }
@@ -949,16 +949,16 @@ class ModuleManifestTest {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: FAIL, cannot find symbol `ModuleManifest`.
 
 - [ ] **Step 3: Write ModuleDescriptor**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.Environment;
-import io.github.intisy.rutter.api.PlatformId;
+import io.github.intisy.nylium.api.Environment;
+import io.github.intisy.nylium.api.PlatformId;
 
 import java.util.Collections;
 import java.util.List;
@@ -1048,11 +1048,11 @@ Append to `VersionRange` (Task 4), alongside `contains`:
 - [ ] **Step 5: Write ModuleManifest**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.Environment;
-import io.github.intisy.rutter.api.PlatformId;
-import io.github.intisy.rutter.api.RutterException;
+import io.github.intisy.nylium.api.Environment;
+import io.github.intisy.nylium.api.PlatformId;
+import io.github.intisy.nylium.api.NyliumException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -1070,7 +1070,7 @@ import java.util.TreeSet;
 
 public final class ModuleManifest {
 
-    public static final String RESOURCE = "rutter-modules.properties";
+    public static final String RESOURCE = "nylium-modules.properties";
 
     private final List<ModuleDescriptor> modules;
 
@@ -1081,7 +1081,7 @@ public final class ModuleManifest {
     public static ModuleManifest readFrom(ClassLoader loader, String resource) {
         InputStream stream = loader.getResourceAsStream(resource);
         if (stream == null) {
-            throw new RutterException("No Rutter module manifest at '" + resource
+            throw new NyliumException("No Nylium module manifest at '" + resource
                     + "'. The jar was built without one, or it was stripped by shading.");
         }
         // Properties.load(InputStream) is specified as ISO-8859-1, which would mangle any
@@ -1089,7 +1089,7 @@ public final class ModuleManifest {
         try (Reader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
             return read(reader);
         } catch (IOException e) {
-            throw new RutterException("Could not read the Rutter module manifest", e);
+            throw new NyliumException("Could not read the Nylium module manifest", e);
         }
     }
 
@@ -1098,14 +1098,14 @@ public final class ModuleManifest {
         try {
             properties.load(reader);
         } catch (IOException e) {
-            throw new RutterException("Could not parse the Rutter module manifest", e);
+            throw new NyliumException("Could not parse the Nylium module manifest", e);
         }
         List<ModuleDescriptor> modules = new ArrayList<>();
         for (String index : indices(properties)) {
             modules.add(readModule(properties, index));
         }
         if (modules.isEmpty()) {
-            throw new RutterException("The Rutter module manifest declares no modules");
+            throw new NyliumException("The Nylium module manifest declares no modules");
         }
         return new ModuleManifest(modules);
     }
@@ -1141,7 +1141,7 @@ public final class ModuleManifest {
     private static String required(Properties properties, String key) {
         String value = properties.getProperty(key);
         if (value == null || value.trim().isEmpty()) {
-            throw new RutterException("The Rutter module manifest is missing '" + key + "'");
+            throw new NyliumException("The Nylium module manifest is missing '" + key + "'");
         }
         return value.trim();
     }
@@ -1152,7 +1152,7 @@ public final class ModuleManifest {
             try {
                 platforms.add(PlatformId.valueOf(name));
             } catch (IllegalArgumentException e) {
-                throw new RutterException("Unknown platform '" + name + "' in the module manifest. "
+                throw new NyliumException("Unknown platform '" + name + "' in the module manifest. "
                         + "Known platforms are " + Arrays.toString(PlatformId.values()) + ".", e);
             }
         }
@@ -1163,7 +1163,7 @@ public final class ModuleManifest {
         try {
             return Environment.valueOf(value);
         } catch (IllegalArgumentException e) {
-            throw new RutterException("Unknown environment '" + value + "' in the module manifest. "
+            throw new NyliumException("Unknown environment '" + value + "' in the module manifest. "
                     + "Known environments are " + Arrays.toString(Environment.values()) + ".", e);
         }
     }
@@ -1175,7 +1175,7 @@ public final class ModuleManifest {
         try {
             return Integer.parseInt(value.trim());
         } catch (NumberFormatException e) {
-            throw new RutterException("'" + prefix + "priority' is not a whole number: " + value, e);
+            throw new NyliumException("'" + prefix + "priority' is not a whole number: " + value, e);
         }
     }
 
@@ -1201,7 +1201,7 @@ public final class ModuleManifest {
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: PASS, all eight manifest tests plus the seven range tests.
 
 - [ ] **Step 7: Commit**
@@ -1216,14 +1216,14 @@ git commit -m "feat(core): module descriptors and properties manifest parsing"
 ## Task 6: ModuleSelector and its rejection diagnostics
 
 **Files:**
-- Create: `rutter-core/src/main/java/io/github/intisy/rutter/core/ModuleSelector.java`
-- Create: `rutter-api/src/main/java/io/github/intisy/rutter/api/NoCompatibleModuleException.java`
-- Test: `rutter-core/src/test/java/io/github/intisy/rutter/core/ModuleSelectorTest.java`
+- Create: `nylium-core/src/main/java/io/github/intisy/nylium/core/ModuleSelector.java`
+- Create: `nylium-api/src/main/java/io/github/intisy/nylium/api/NoCompatibleModuleException.java`
+- Test: `nylium-core/src/test/java/io/github/intisy/nylium/core/ModuleSelectorTest.java`
 
 **Interfaces:**
 - Consumes: `ModuleManifest`, `ModuleDescriptor` (Task 5), `McVersion`, `PlatformId`, `Environment` (Task 3).
 - Produces:
-  - `class NoCompatibleModuleException extends RutterException` with `(String message)`
+  - `class NoCompatibleModuleException extends NyliumException` with `(String message)`
   - `final class ModuleSelector` with `ModuleSelector(ModuleManifest)` and `ModuleDescriptor select(PlatformId, McVersion, Environment)`
 
 Ordering is specificity descending, then priority descending, then manifest order. A miss throws with every candidate and its rejection reason, because that message is the whole support story for a library shipped to third parties.
@@ -1231,12 +1231,12 @@ Ordering is specificity descending, then priority descending, then manifest orde
 - [ ] **Step 1: Write the failing test**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.Environment;
-import io.github.intisy.rutter.api.McVersion;
-import io.github.intisy.rutter.api.NoCompatibleModuleException;
-import io.github.intisy.rutter.api.PlatformId;
+import io.github.intisy.nylium.api.Environment;
+import io.github.intisy.nylium.api.McVersion;
+import io.github.intisy.nylium.api.NoCompatibleModuleException;
+import io.github.intisy.nylium.api.PlatformId;
 import org.junit.jupiter.api.Test;
 
 import java.io.StringReader;
@@ -1358,15 +1358,15 @@ class ModuleSelectorTest {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: FAIL, cannot find symbol `ModuleSelector`.
 
 - [ ] **Step 3: Write NoCompatibleModuleException**
 
 ```java
-package io.github.intisy.rutter.api;
+package io.github.intisy.nylium.api;
 
-public class NoCompatibleModuleException extends RutterException {
+public class NoCompatibleModuleException extends NyliumException {
 
     public NoCompatibleModuleException(String message) {
         super(message);
@@ -1377,12 +1377,12 @@ public class NoCompatibleModuleException extends RutterException {
 - [ ] **Step 4: Write ModuleSelector**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.Environment;
-import io.github.intisy.rutter.api.McVersion;
-import io.github.intisy.rutter.api.NoCompatibleModuleException;
-import io.github.intisy.rutter.api.PlatformId;
+import io.github.intisy.nylium.api.Environment;
+import io.github.intisy.nylium.api.McVersion;
+import io.github.intisy.nylium.api.NoCompatibleModuleException;
+import io.github.intisy.nylium.api.PlatformId;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -1410,7 +1410,7 @@ public final class ModuleSelector {
             rejections.append("\n  - ").append(candidate.path()).append(": ").append(rejection);
         }
         throw new NoCompatibleModuleException(
-                "No Rutter module suits platform " + platform + ", Minecraft " + version.raw()
+                "No Nylium module suits platform " + platform + ", Minecraft " + version.raw()
                         + ", environment " + environment + ". Candidates considered:" + rejections);
     }
 
@@ -1434,7 +1434,7 @@ Sorting once in the constructor rather than per call is what makes `selectionIsS
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: PASS, all seven selector tests.
 
 - [ ] **Step 6: Commit**
@@ -1449,11 +1449,11 @@ git commit -m "feat(core): deterministic module selection with rejection diagnos
 ## Task 7: ModuleExtractor
 
 **Files:**
-- Create: `rutter-core/src/main/java/io/github/intisy/rutter/core/ModuleExtractor.java`
-- Test: `rutter-core/src/test/java/io/github/intisy/rutter/core/ModuleExtractorTest.java`
+- Create: `nylium-core/src/main/java/io/github/intisy/nylium/core/ModuleExtractor.java`
+- Test: `nylium-core/src/test/java/io/github/intisy/nylium/core/ModuleExtractorTest.java`
 
 **Interfaces:**
-- Consumes: `ModuleDescriptor` (Task 5), `RutterException` (Task 3).
+- Consumes: `ModuleDescriptor` (Task 5), `NyliumException` (Task 3).
 - Produces: `final class ModuleExtractor` with `ModuleExtractor(Path cacheDirectory)` and `Path extract(ClassLoader source, ModuleDescriptor module)`.
 
 Nested jars must exist as real files, because Fabric extracts them and ModLauncher needs a `Path`. The cache is keyed by SHA-256 of the nested entry's bytes, so a rebuilt module invalidates automatically and an unchanged one is never rewritten. Two game instances launching at once must not see a half-written file, so writes go to a temporary name and land via an atomic rename.
@@ -1461,9 +1461,9 @@ Nested jars must exist as real files, because Fabric extracts them and ModLaunch
 - [ ] **Step 1: Write the failing test**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.RutterException;
+import io.github.intisy.nylium.api.NyliumException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -1578,7 +1578,7 @@ class ModuleExtractorTest {
         ClassLoader loader = outerJarContaining(dir, "modules/a.jar", tinyJar());
         ModuleExtractor extractor = new ModuleExtractor(dir.resolve("cache"));
 
-        RutterException thrown = assertThrows(RutterException.class,
+        NyliumException thrown = assertThrows(NyliumException.class,
                 () -> extractor.extract(loader, descriptor("modules/absent.jar")));
         assertTrue(thrown.getMessage().contains("modules/absent.jar"), thrown.getMessage());
     }
@@ -1587,15 +1587,15 @@ class ModuleExtractorTest {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: FAIL, cannot find symbol `ModuleExtractor`.
 
 - [ ] **Step 3: Write ModuleExtractor**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.RutterException;
+import io.github.intisy.nylium.api.NyliumException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -1628,7 +1628,7 @@ public final class ModuleExtractor {
     private static byte[] read(ClassLoader source, String path) {
         try (InputStream stream = source.getResourceAsStream(path)) {
             if (stream == null) {
-                throw new RutterException("The Rutter manifest names module '" + path
+                throw new NyliumException("The Nylium manifest names module '" + path
                         + "' but no such entry exists in the jar.");
             }
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -1639,7 +1639,7 @@ public final class ModuleExtractor {
             }
             return buffer.toByteArray();
         } catch (IOException e) {
-            throw new RutterException("Could not read module '" + path + "' from the jar", e);
+            throw new NyliumException("Could not read module '" + path + "' from the jar", e);
         }
     }
 
@@ -1665,7 +1665,7 @@ public final class ModuleExtractor {
             }
             return hex.toString();
         } catch (NoSuchAlgorithmException e) {
-            throw new RutterException("SHA-256 is unavailable on this JVM", e);
+            throw new NyliumException("SHA-256 is unavailable on this JVM", e);
         }
     }
 
@@ -1674,7 +1674,7 @@ public final class ModuleExtractor {
             Files.createDirectories(cacheDirectory);
             // A second game instance may be extracting the same module: write under a unique
             // name and land it atomically, so nobody ever opens a half-written jar.
-            Path temporary = Files.createTempFile(cacheDirectory, "rutter-", ".jar.part");
+            Path temporary = Files.createTempFile(cacheDirectory, "nylium-", ".jar.part");
             Files.write(temporary, bytes);
             try {
                 Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
@@ -1686,7 +1686,7 @@ public final class ModuleExtractor {
                 }
             }
         } catch (IOException e) {
-            throw new RutterException("Could not write module to the Rutter cache at " + target, e);
+            throw new NyliumException("Could not write module to the Nylium cache at " + target, e);
         }
     }
 }
@@ -1694,7 +1694,7 @@ public final class ModuleExtractor {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: PASS, all five extractor tests.
 
 - [ ] **Step 5: Commit**
@@ -1708,16 +1708,16 @@ git commit -m "feat(core): hash-keyed module extraction with atomic landing"
 ## Task 8: Version probe chain
 
 **Files:**
-- Create: `rutter-core/src/main/java/io/github/intisy/rutter/core/probe/VersionProbe.java`
-- Create: `rutter-core/src/main/java/io/github/intisy/rutter/core/probe/VersionJsonProbe.java`
-- Create: `rutter-core/src/main/java/io/github/intisy/rutter/core/probe/MarkerClassProbe.java`
-- Create: `rutter-core/src/main/java/io/github/intisy/rutter/core/probe/ProbeChain.java`
-- Test: `rutter-core/src/test/java/io/github/intisy/rutter/core/probe/ProbeChainTest.java`
-- Test: `rutter-core/src/test/java/io/github/intisy/rutter/core/probe/VersionJsonProbeTest.java`
-- Test: `rutter-core/src/test/java/io/github/intisy/rutter/core/probe/MarkerClassProbeTest.java`
+- Create: `nylium-core/src/main/java/io/github/intisy/nylium/core/probe/VersionProbe.java`
+- Create: `nylium-core/src/main/java/io/github/intisy/nylium/core/probe/VersionJsonProbe.java`
+- Create: `nylium-core/src/main/java/io/github/intisy/nylium/core/probe/MarkerClassProbe.java`
+- Create: `nylium-core/src/main/java/io/github/intisy/nylium/core/probe/ProbeChain.java`
+- Test: `nylium-core/src/test/java/io/github/intisy/nylium/core/probe/ProbeChainTest.java`
+- Test: `nylium-core/src/test/java/io/github/intisy/nylium/core/probe/VersionJsonProbeTest.java`
+- Test: `nylium-core/src/test/java/io/github/intisy/nylium/core/probe/MarkerClassProbeTest.java`
 
 **Interfaces:**
-- Consumes: `McVersion`, `RutterException` (Task 3).
+- Consumes: `McVersion`, `NyliumException` (Task 3).
 - Produces:
   - `interface VersionProbe` with `String name()` and `Optional<String> detect()`
   - `final class VersionJsonProbe implements VersionProbe` with `VersionJsonProbe(ClassLoader)`
@@ -1726,17 +1726,17 @@ git commit -m "feat(core): hash-keyed module extraction with atomic landing"
 
 No single strategy is reliable across twenty versions; Fabric Loader itself falls through eight. The chain returns the first probe that yields a parseable version, and on total failure reports every probe it tried so the user can say which one should have worked.
 
-`VersionJsonProbe` reads Mojang's `version.json`, present at the root of the Minecraft jar since 1.14. It extracts the `"id"` field with a targeted scan rather than a JSON parser, because `rutter-core` carries zero dependencies.
+`VersionJsonProbe` reads Mojang's `version.json`, present at the root of the Minecraft jar since 1.14. It extracts the `"id"` field with a targeted scan rather than a JSON parser, because `nylium-core` carries zero dependencies.
 
 `MarkerClassProbe` covers the pre-1.14 versions that have no `version.json`, mapping the presence of a class that appeared in a known version to a floor.
 
 - [ ] **Step 1: Write the failing chain test**
 
 ```java
-package io.github.intisy.rutter.core.probe;
+package io.github.intisy.nylium.core.probe;
 
-import io.github.intisy.rutter.api.McVersion;
-import io.github.intisy.rutter.api.RutterException;
+import io.github.intisy.nylium.api.McVersion;
+import io.github.intisy.nylium.api.NyliumException;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -1811,27 +1811,27 @@ class ProbeChainTest {
                 probe("alpha", null),
                 probe("beta", "25w14a")));
 
-        RutterException thrown = assertThrows(RutterException.class, chain::detect);
+        NyliumException thrown = assertThrows(NyliumException.class, chain::detect);
         assertTrue(thrown.getMessage().contains("alpha"), thrown.getMessage());
         assertTrue(thrown.getMessage().contains("beta"), thrown.getMessage());
     }
 
     @Test
     void rejectsAnEmptyChain() {
-        assertThrows(RutterException.class, () -> new ProbeChain(Collections.emptyList()));
+        assertThrows(NyliumException.class, () -> new ProbeChain(Collections.emptyList()));
     }
 }
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: FAIL, cannot find symbol `ProbeChain`.
 
 - [ ] **Step 3: Write VersionProbe and ProbeChain**
 
 ```java
-package io.github.intisy.rutter.core.probe;
+package io.github.intisy.nylium.core.probe;
 
 import java.util.Optional;
 
@@ -1844,10 +1844,10 @@ public interface VersionProbe {
 ```
 
 ```java
-package io.github.intisy.rutter.core.probe;
+package io.github.intisy.nylium.core.probe;
 
-import io.github.intisy.rutter.api.McVersion;
-import io.github.intisy.rutter.api.RutterException;
+import io.github.intisy.nylium.api.McVersion;
+import io.github.intisy.nylium.api.NyliumException;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -1860,7 +1860,7 @@ public final class ProbeChain {
 
     public ProbeChain(List<VersionProbe> probes) {
         if (probes == null || probes.isEmpty()) {
-            throw new RutterException("A version probe chain needs at least one probe");
+            throw new NyliumException("A version probe chain needs at least one probe");
         }
         this.probes = Collections.unmodifiableList(new ArrayList<>(probes));
     }
@@ -1874,8 +1874,8 @@ public final class ProbeChain {
                 if (detected.isPresent()) {
                     try {
                         return McVersion.parse(detected.get());
-                    } catch (RutterException e) {
-                        outcome = "found '" + detected.get() + "', which Rutter cannot read";
+                    } catch (NyliumException e) {
+                        outcome = "found '" + detected.get() + "', which Nylium cannot read";
                     }
                 } else {
                     outcome = "found nothing";
@@ -1885,8 +1885,8 @@ public final class ProbeChain {
             }
             attempts.append("\n  - ").append(probe.name()).append(": ").append(outcome);
         }
-        throw new RutterException(
-                "Rutter could not determine the running Minecraft version. Probes tried:" + attempts);
+        throw new NyliumException(
+                "Nylium could not determine the running Minecraft version. Probes tried:" + attempts);
     }
 }
 ```
@@ -1895,13 +1895,13 @@ A probe that throws is skipped rather than fatal: probes reach into loader inter
 
 - [ ] **Step 4: Run the chain test to verify it passes**
 
-Run: `./gradlew :rutter-core:test --tests '*ProbeChainTest' --console=plain`
+Run: `./gradlew :nylium-core:test --tests '*ProbeChainTest' --console=plain`
 Expected: PASS, all five tests.
 
 - [ ] **Step 5: Write the failing VersionJsonProbe test**
 
 ```java
-package io.github.intisy.rutter.core.probe;
+package io.github.intisy.nylium.core.probe;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -1966,7 +1966,7 @@ class VersionJsonProbeTest {
 - [ ] **Step 6: Write VersionJsonProbe**
 
 ```java
-package io.github.intisy.rutter.core.probe;
+package io.github.intisy.nylium.core.probe;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -1981,7 +1981,7 @@ public final class VersionJsonProbe implements VersionProbe {
 
     private static final String RESOURCE = "version.json";
 
-    // rutter-core carries zero dependencies, so the one field we need is matched directly
+    // nylium-core carries zero dependencies, so the one field we need is matched directly
     // rather than by parsing the document.
     private static final Pattern ID = Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\"");
 
@@ -2022,7 +2022,7 @@ public final class VersionJsonProbe implements VersionProbe {
 - [ ] **Step 7: Write the failing MarkerClassProbe test**
 
 ```java
-package io.github.intisy.rutter.core.probe;
+package io.github.intisy.nylium.core.probe;
 
 import org.junit.jupiter.api.Test;
 
@@ -2070,7 +2070,7 @@ class MarkerClassProbeTest {
 - [ ] **Step 8: Write MarkerClassProbe**
 
 ```java
-package io.github.intisy.rutter.core.probe;
+package io.github.intisy.nylium.core.probe;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -2117,7 +2117,7 @@ public final class MarkerClassProbe implements VersionProbe {
 
 - [ ] **Step 9: Run every probe test**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: PASS, twelve probe tests plus everything from Tasks 4 to 7.
 
 - [ ] **Step 10: Commit**
@@ -2129,16 +2129,16 @@ git commit -m "feat(core): version probe chain with version.json and marker clas
 
 ---
 
-## Task 9: RutterKernel and the fake-platform integration test
+## Task 9: NyliumKernel and the fake-platform integration test
 
 **Files:**
-- Create: `rutter-core/src/main/java/io/github/intisy/rutter/core/RutterKernel.java`
-- Test: `rutter-core/src/test/java/io/github/intisy/rutter/core/RutterKernelTest.java`
-- Test: `rutter-core/src/test/java/io/github/intisy/rutter/core/FakePlatform.java`
+- Create: `nylium-core/src/main/java/io/github/intisy/nylium/core/NyliumKernel.java`
+- Test: `nylium-core/src/test/java/io/github/intisy/nylium/core/NyliumKernelTest.java`
+- Test: `nylium-core/src/test/java/io/github/intisy/nylium/core/FakePlatform.java`
 
 **Interfaces:**
 - Consumes: `Platform` (Task 3), `ModuleManifest`, `ModuleSelector`, `ModuleExtractor`, `ProbeChain`, `VersionJsonProbe`, `MarkerClassProbe`.
-- Produces: `final class RutterKernel` with `static ModuleDescriptor boot(Platform platform, ClassLoader source, Path cacheDirectory)`.
+- Produces: `final class NyliumKernel` with `static ModuleDescriptor boot(Platform platform, ClassLoader source, Path cacheDirectory)`.
 
 This is the whole flow in one place, and it is the last piece testable without a game. Every backend's job reduces to constructing a `Platform` and calling `boot`.
 
@@ -2147,11 +2147,11 @@ Order matters and is load-bearing: the module must be on the classpath **before*
 - [ ] **Step 1: Write the fake platform**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.Environment;
-import io.github.intisy.rutter.api.Platform;
-import io.github.intisy.rutter.api.PlatformId;
+import io.github.intisy.nylium.api.Environment;
+import io.github.intisy.nylium.api.Platform;
+import io.github.intisy.nylium.api.PlatformId;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -2206,11 +2206,11 @@ final class FakePlatform implements Platform {
 - [ ] **Step 2: Write the failing kernel test**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.Environment;
-import io.github.intisy.rutter.api.NoCompatibleModuleException;
-import io.github.intisy.rutter.api.PlatformId;
+import io.github.intisy.nylium.api.Environment;
+import io.github.intisy.nylium.api.NoCompatibleModuleException;
+import io.github.intisy.nylium.api.PlatformId;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -2227,7 +2227,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class RutterKernelTest {
+class NyliumKernelTest {
 
     private static final String MANIFEST =
             "module.0.path=modules/mod-1.21.11.jar\n"
@@ -2269,7 +2269,7 @@ class RutterKernelTest {
     void loadsTheModuleMatchingTheNativeProbe(@TempDir Path dir) throws Exception {
         FakePlatform platform = new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11");
 
-        ModuleDescriptor loaded = RutterKernel.boot(platform, outerJar(dir), dir.resolve("cache"));
+        ModuleDescriptor loaded = NyliumKernel.boot(platform, outerJar(dir), dir.resolve("cache"));
 
         assertEquals("modules/mod-1.21.11.jar", loaded.path());
         assertEquals(1, platform.classpathAdditions.size());
@@ -2281,10 +2281,10 @@ class RutterKernelTest {
         ClassLoader source = outerJar(dir);
 
         assertEquals("modules/mod-1.21.10.jar",
-                RutterKernel.boot(new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.10"),
+                NyliumKernel.boot(new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.10"),
                         source, dir.resolve("cache")).path());
         assertEquals("modules/mod-1.21.11.jar",
-                RutterKernel.boot(new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11"),
+                NyliumKernel.boot(new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11"),
                         source, dir.resolve("cache")).path());
     }
 
@@ -2292,7 +2292,7 @@ class RutterKernelTest {
     void registersEveryMixinConfigOfTheChosenModule(@TempDir Path dir) throws Exception {
         FakePlatform platform = new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11");
 
-        RutterKernel.boot(platform, outerJar(dir), dir.resolve("cache"));
+        NyliumKernel.boot(platform, outerJar(dir), dir.resolve("cache"));
 
         assertEquals(java.util.Arrays.asList("mixins.mod.json", "mixins.mod.extra.json"),
                 platform.registeredConfigs);
@@ -2302,7 +2302,7 @@ class RutterKernelTest {
     void classpathsTheModuleBeforeRegisteringItsMixins(@TempDir Path dir) throws Exception {
         FakePlatform platform = new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11");
 
-        RutterKernel.boot(platform, outerJar(dir), dir.resolve("cache"));
+        NyliumKernel.boot(platform, outerJar(dir), dir.resolve("cache"));
 
         assertEquals("classpath", platform.callOrder.get(0));
     }
@@ -2312,11 +2312,11 @@ class RutterKernelTest {
         ClassLoader source = outerJar(dir);
 
         assertEquals("modules/mod-1.21.11.jar",
-                RutterKernel.boot(new FakePlatform(PlatformId.MODLAUNCHER_9, Environment.SERVER, "1.21.11"),
+                NyliumKernel.boot(new FakePlatform(PlatformId.MODLAUNCHER_9, Environment.SERVER, "1.21.11"),
                         source, dir.resolve("cache")).path());
 
         assertThrows(NoCompatibleModuleException.class,
-                () -> RutterKernel.boot(new FakePlatform(PlatformId.MODLAUNCHER_9, Environment.SERVER, "1.21.10"),
+                () -> NyliumKernel.boot(new FakePlatform(PlatformId.MODLAUNCHER_9, Environment.SERVER, "1.21.10"),
                         source, dir.resolve("cache")));
     }
 
@@ -2339,36 +2339,36 @@ class RutterKernelTest {
         FakePlatform platform = new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, null);
 
         assertEquals("modules/mod-1.21.11.jar",
-                RutterKernel.boot(platform, source, dir.resolve("cache")).path());
+                NyliumKernel.boot(platform, source, dir.resolve("cache")).path());
     }
 }
 ```
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `./gradlew :rutter-core:test --console=plain`
-Expected: FAIL, cannot find symbol `RutterKernel`.
+Run: `./gradlew :nylium-core:test --console=plain`
+Expected: FAIL, cannot find symbol `NyliumKernel`.
 
-- [ ] **Step 4: Write RutterKernel**
+- [ ] **Step 4: Write NyliumKernel**
 
 ```java
-package io.github.intisy.rutter.core;
+package io.github.intisy.nylium.core;
 
-import io.github.intisy.rutter.api.McVersion;
-import io.github.intisy.rutter.api.Platform;
-import io.github.intisy.rutter.core.probe.MarkerClassProbe;
-import io.github.intisy.rutter.core.probe.ProbeChain;
-import io.github.intisy.rutter.core.probe.VersionJsonProbe;
-import io.github.intisy.rutter.core.probe.VersionProbe;
+import io.github.intisy.nylium.api.McVersion;
+import io.github.intisy.nylium.api.Platform;
+import io.github.intisy.nylium.core.probe.MarkerClassProbe;
+import io.github.intisy.nylium.core.probe.ProbeChain;
+import io.github.intisy.nylium.core.probe.VersionJsonProbe;
+import io.github.intisy.nylium.core.probe.VersionProbe;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-public final class RutterKernel {
+public final class NyliumKernel {
 
-    private RutterKernel() {
+    private NyliumKernel() {
     }
 
     public static ModuleDescriptor boot(Platform platform, ClassLoader source, Path cacheDirectory) {
@@ -2409,7 +2409,7 @@ public final class RutterKernel {
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: PASS, all six kernel tests and every earlier core test.
 
 - [ ] **Step 6: Commit**
@@ -2425,12 +2425,12 @@ git commit -m "feat(core): kernel orchestration from probe through mixin registr
 
 **Files:**
 - Create: `buildSrc/build.gradle`
-- Create: `buildSrc/src/main/java/io/github/intisy/rutter/gradle/ApiPurityTask.java`
-- Modify: `rutter-api/build.gradle`
-- Test: `buildSrc/src/test/java/io/github/intisy/rutter/gradle/ApiPurityTaskTest.java`
+- Create: `buildSrc/src/main/java/io/github/intisy/nylium/gradle/ApiPurityTask.java`
+- Modify: `nylium-api/build.gradle`
+- Test: `buildSrc/src/test/java/io/github/intisy/nylium/gradle/ApiPurityTaskTest.java`
 
 **Interfaces:**
-- Produces: a Gradle task type `ApiPurityTask` with an input `jar` property, registered in `rutter-api` as `checkApiPurity` and wired into `check`.
+- Produces: a Gradle task type `ApiPurityTask` with an input `jar` property, registered in `nylium-api` as `checkApiPurity` and wired into `check`.
 
 This mechanically enforces the program's founding compatibility contract. It runs from the first commit, before there is any API worth protecting, because retrofitting purity onto an already-leaked API is not practical.
 
@@ -2463,7 +2463,7 @@ tasks.withType(Test).configureEach {
 - [ ] **Step 2: Write the failing purity test**
 
 ```java
-package io.github.intisy.rutter.gradle;
+package io.github.intisy.nylium.gradle;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -2563,12 +2563,12 @@ class ApiPurityTaskTest {
 }
 ```
 
-The last test encodes a deliberate decision: the contract is about the **public** surface. A private field cannot be depended on by a consumer, so it cannot break their compatibility. Restricting the scan to public and protected members keeps `rutter-api` able to hold an internal helper if it ever needs one, without weakening the promise.
+The last test encodes a deliberate decision: the contract is about the **public** surface. A private field cannot be depended on by a consumer, so it cannot break their compatibility. Restricting the scan to public and protected members keeps `nylium-api` able to hold an internal helper if it ever needs one, without weakening the promise.
 
 - [ ] **Step 3: Write the scanner and the task**
 
 ```java
-package io.github.intisy.rutter.gradle;
+package io.github.intisy.nylium.gradle;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -2646,7 +2646,7 @@ public final class ApiPurityScanner {
 ```
 
 ```java
-package io.github.intisy.rutter.gradle;
+package io.github.intisy.nylium.gradle;
 
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
@@ -2690,7 +2690,7 @@ public abstract class ApiPurityTask extends DefaultTask {
             }
         }
         if (!findings.isEmpty()) {
-            throw new GradleException("rutter-api must not expose net.minecraft types:\n  "
+            throw new GradleException("nylium-api must not expose net.minecraft types:\n  "
                     + String.join("\n  ", findings));
         }
     }
@@ -2702,14 +2702,14 @@ public abstract class ApiPurityTask extends DefaultTask {
 Run: `./gradlew :buildSrc:test --console=plain`
 Expected: PASS, all five tests.
 
-- [ ] **Step 5: Wire the task into rutter-api**
+- [ ] **Step 5: Wire the task into nylium-api**
 
-Replace `rutter-api/build.gradle` with:
+Replace `nylium-api/build.gradle` with:
 
 ```groovy
-import io.github.intisy.rutter.gradle.ApiPurityTask
+import io.github.intisy.nylium.gradle.ApiPurityTask
 
-// intentionally no dependencies: rutter-api must stay standalone
+// intentionally no dependencies: nylium-api must stay standalone
 
 tasks.register('checkApiPurity', ApiPurityTask) {
     jar = tasks.jar.archiveFile
@@ -2723,14 +2723,14 @@ tasks.named('check') {
 
 - [ ] **Step 6: Prove the check runs and passes**
 
-Run: `./gradlew :rutter-api:check --console=plain`
+Run: `./gradlew :nylium-api:check --console=plain`
 Expected: `BUILD SUCCESSFUL` with `checkApiPurity` executed.
 
 - [ ] **Step 7: Prove the check actually fails on a violation**
 
-Temporarily add to `rutter-api/src/main/java/io/github/intisy/rutter/api/Leak.java`:
+Temporarily add to `nylium-api/src/main/java/io/github/intisy/nylium/api/Leak.java`:
 ```java
-package io.github.intisy.rutter.api;
+package io.github.intisy.nylium.api;
 
 public class Leak {
     public net.minecraft.Level level() {
@@ -2740,50 +2740,50 @@ public class Leak {
 ```
 This will not compile (no Minecraft on the classpath), which proves a different point. Instead, verify the negative case by running the `buildSrc` test suite, which compiles real fixtures against a stub `net.minecraft.Level`. Then delete the file if created:
 ```bash
-rm -f rutter-api/src/main/java/io/github/intisy/rutter/api/Leak.java
+rm -f nylium-api/src/main/java/io/github/intisy/nylium/api/Leak.java
 ```
-Record in the commit message that the negative case is covered by `ApiPurityTaskTest`, not by a live violation, because `rutter-api` cannot compile against Minecraft by construction. That inability is itself a second layer of the same guarantee.
+Record in the commit message that the negative case is covered by `ApiPurityTaskTest`, not by a live violation, because `nylium-api` cannot compile against Minecraft by construction. That inability is itself a second layer of the same guarantee.
 
 - [ ] **Step 8: Commit**
 
 ```bash
 git add -A
-git commit -m "build: fail the build when rutter-api exposes a minecraft type"
+git commit -m "build: fail the build when nylium-api exposes a minecraft type"
 ```
 
 ---
 ## Task 11: Module entrypoints, the test mod, and universal jar assembly
 
 **Files:**
-- Modify: `rutter-core/src/main/java/io/github/intisy/rutter/core/ModuleDescriptor.java`
-- Modify: `rutter-core/src/main/java/io/github/intisy/rutter/core/ModuleManifest.java`
-- Modify: `rutter-core/src/main/java/io/github/intisy/rutter/core/RutterKernel.java`
-- Modify: `rutter-core/src/test/java/io/github/intisy/rutter/core/RutterKernelTest.java`
-- Create: `rutter-testmod/build.gradle`
-- Create: `rutter-testmod/src/main/java/io/github/intisy/rutter/testmod/TestModEntry.java`
+- Modify: `nylium-core/src/main/java/io/github/intisy/nylium/core/ModuleDescriptor.java`
+- Modify: `nylium-core/src/main/java/io/github/intisy/nylium/core/ModuleManifest.java`
+- Modify: `nylium-core/src/main/java/io/github/intisy/nylium/core/NyliumKernel.java`
+- Modify: `nylium-core/src/test/java/io/github/intisy/nylium/core/NyliumKernelTest.java`
+- Create: `nylium-testmod/build.gradle`
+- Create: `nylium-testmod/src/main/java/io/github/intisy/nylium/testmod/TestModEntry.java`
 - Create: `smoke/build.gradle`
-- Create: `smoke/src/test/java/io/github/intisy/rutter/smoke/ServerSmokeHarness.java`
+- Create: `smoke/src/test/java/io/github/intisy/nylium/smoke/ServerSmokeHarness.java`
 - Modify: `settings.gradle`
 
 **Interfaces:**
 - Produces:
   - `Optional<String> ModuleDescriptor.entrypoint()`, read from `module.N.entrypoint`
-  - `RutterKernel.boot` invoking `public static void rutterInit()` on the entrypoint class after mixin registration
+  - `NyliumKernel.boot` invoking `public static void nyliumInit()` on the entrypoint class after mixin registration
   - `ServerSmokeHarness.run(Path serverDirectory, List<String> command, Path markerFile, Duration timeout)` returning the marker's contents
 
-**Why the entrypoint is needed:** by the time Rutter dispatches, the loader has already finished discovering mods. Nothing in the freshly classpathed module would ever run on its own, so the kernel has to call into it. This is the piece that makes a loaded module actually a mod.
+**Why the entrypoint is needed:** by the time Nylium dispatches, the loader has already finished discovering mods. Nothing in the freshly classpathed module would ever run on its own, so the kernel has to call into it. This is the piece that makes a loaded module actually a mod.
 
-**Why the smoke tests run servers:** a dedicated server is headless by nature, scriptable, and needs no display. Better still, Rutter's dispatch completes during preLaunch or the transformation-service phase, long before world generation, so the harness can poll for the marker and kill the process without ever letting the game finish booting. No EULA, no world, no display, and a few seconds per case.
+**Why the smoke tests run servers:** a dedicated server is headless by nature, scriptable, and needs no display. Better still, Nylium's dispatch completes during preLaunch or the transformation-service phase, long before world generation, so the harness can poll for the marker and kill the process without ever letting the game finish booting. No EULA, no world, no display, and a few seconds per case.
 
 - [ ] **Step 1: Write the failing entrypoint test**
 
-Add to `RutterKernelTest`:
+Add to `NyliumKernelTest`:
 
 ```java
     public static class RecordingEntrypoint {
         static int invocations = 0;
 
-        public static void rutterInit() {
+        public static void nyliumInit() {
             invocations++;
         }
     }
@@ -2809,7 +2809,7 @@ Add to `RutterKernelTest`:
                 getClass().getClassLoader());
         FakePlatform platform = new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11");
 
-        RutterKernel.boot(platform, source, dir.resolve("cache"));
+        NyliumKernel.boot(platform, source, dir.resolve("cache"));
 
         assertEquals(1, RecordingEntrypoint.invocations);
         assertEquals("mixin:mixins.mod.json",
@@ -2821,7 +2821,7 @@ Add to `RutterKernelTest`:
         FakePlatform platform = new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11");
 
         assertEquals("modules/mod-1.21.11.jar",
-                RutterKernel.boot(platform, outerJar(dir), dir.resolve("cache")).path());
+                NyliumKernel.boot(platform, outerJar(dir), dir.resolve("cache")).path());
     }
 
     @Test
@@ -2842,9 +2842,9 @@ Add to `RutterKernelTest`:
         ClassLoader source = new URLClassLoader(new URL[]{outer.toUri().toURL()}, null);
         FakePlatform platform = new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11");
 
-        io.github.intisy.rutter.api.RutterException thrown =
-                assertThrows(io.github.intisy.rutter.api.RutterException.class,
-                        () -> RutterKernel.boot(platform, source, dir.resolve("cache")));
+        io.github.intisy.nylium.api.NyliumException thrown =
+                assertThrows(io.github.intisy.nylium.api.NyliumException.class,
+                        () -> NyliumKernel.boot(platform, source, dir.resolve("cache")));
         assertTrue(thrown.getMessage().contains("com.example.Absent"), thrown.getMessage());
         assertTrue(thrown.getMessage().contains("modules/mod-1.21.11.jar"), thrown.getMessage());
     }
@@ -2852,7 +2852,7 @@ Add to `RutterKernelTest`:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: FAIL, `entrypoint()` is not defined on `ModuleDescriptor`.
 
 - [ ] **Step 3: Add the entrypoint to ModuleDescriptor**
@@ -2878,7 +2878,7 @@ In `readModule`, before the `return`:
 
 and pass `entrypoint` as the final argument to the `ModuleDescriptor` constructor.
 
-- [ ] **Step 5: Invoke it from RutterKernel**
+- [ ] **Step 5: Invoke it from NyliumKernel**
 
 In `boot`, after the mixin registration loop:
 
@@ -2889,32 +2889,32 @@ In `boot`, after the mixin registration loop:
 
     private static void invoke(String className, ModuleDescriptor module, ClassLoader source) {
         try {
-            Class.forName(className, true, source).getMethod("rutterInit").invoke(null);
+            Class.forName(className, true, source).getMethod("nyliumInit").invoke(null);
         } catch (ReflectiveOperationException | LinkageError e) {
-            throw new RutterException("Module '" + module.path() + "' names entrypoint '" + className
-                    + "', which could not be invoked. It needs a public static void rutterInit().", e);
+            throw new NyliumException("Module '" + module.path() + "' names entrypoint '" + className
+                    + "', which could not be invoked. It needs a public static void nyliumInit().", e);
         }
 ```
 
-Add the `RutterException` import.
+Add the `NyliumException` import.
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `./gradlew :rutter-core:test --console=plain`
+Run: `./gradlew :nylium-core:test --console=plain`
 Expected: PASS, all nine kernel tests.
 
 - [ ] **Step 7: Write the test mod**
 
-`rutter-testmod/build.gradle`:
+`nylium-testmod/build.gradle`:
 ```groovy
 dependencies {
-    implementation project(':rutter-api')
+    implementation project(':nylium-api')
 }
 ```
 
-`rutter-testmod/src/main/java/io/github/intisy/rutter/testmod/TestModEntry.java`:
+`nylium-testmod/src/main/java/io/github/intisy/nylium/testmod/TestModEntry.java`:
 ```java
-package io.github.intisy.rutter.testmod;
+package io.github.intisy.nylium.testmod;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -2928,12 +2928,12 @@ public final class TestModEntry {
     private TestModEntry() {
     }
 
-    public static void rutterInit() {
-        String target = System.getProperty("rutter.smoke.marker");
+    public static void nyliumInit() {
+        String target = System.getProperty("nylium.smoke.marker");
         if (target == null) {
             return;
         }
-        String report = "module=" + System.getProperty("rutter.testmod.id", "unknown") + "\n";
+        String report = "module=" + System.getProperty("nylium.testmod.id", "unknown") + "\n";
         try {
             Path marker = Paths.get(target);
             Files.createDirectories(marker.getParent());
@@ -2945,7 +2945,7 @@ public final class TestModEntry {
 }
 ```
 
-`rutter.testmod.id` is baked into each per-version module jar as a resource-driven system property in Step 9, so the marker proves *which* module ran rather than merely that one did.
+`nylium.testmod.id` is baked into each per-version module jar as a resource-driven system property in Step 9, so the marker proves *which* module ran rather than merely that one did.
 
 - [ ] **Step 8: Correct the marker to read a bundled resource rather than a system property**
 
@@ -2960,7 +2960,7 @@ and add:
 ```java
     private static String moduleId() {
         try (java.io.InputStream stream =
-                     TestModEntry.class.getResourceAsStream("/rutter-testmod-id.txt")) {
+                     TestModEntry.class.getResourceAsStream("/nylium-testmod-id.txt")) {
             if (stream == null) {
                 return "unknown";
             }
@@ -2979,7 +2979,7 @@ and add:
 
 - [ ] **Step 9: Add the module-jar assembly tasks**
 
-Append to `rutter-testmod/build.gradle`:
+Append to `nylium-testmod/build.gradle`:
 
 ```groovy
 def moduleIds = ['1.21.11', '1.21.10', '1.16.5', '1.7.10']
@@ -2990,7 +2990,7 @@ moduleIds.each { id ->
         destinationDirectory = layout.buildDirectory.dir('modules')
         from sourceSets.main.output
         from(resources.text.fromString(id)) {
-            rename '.*', 'rutter-testmod-id.txt'
+            rename '.*', 'nylium-testmod-id.txt'
         }
     }
 }
@@ -3007,19 +3007,19 @@ Every module jar holds the same classes and differs only in its id resource. Tha
 `smoke/build.gradle`:
 ```groovy
 dependencies {
-    testImplementation project(':rutter-api')
+    testImplementation project(':nylium-api')
 }
 
 tasks.named('test') {
     // Smoke tests download loader installers and launch servers; they are opt-in so the
     // ordinary build stays offline and fast.
-    onlyIf { project.hasProperty('rutterSmoke') }
+    onlyIf { project.hasProperty('nyliumSmoke') }
 }
 ```
 
-`smoke/src/test/java/io/github/intisy/rutter/smoke/ServerSmokeHarness.java`:
+`smoke/src/test/java/io/github/intisy/nylium/smoke/ServerSmokeHarness.java`:
 ```java
-package io.github.intisy.rutter.smoke;
+package io.github.intisy.nylium.smoke;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -3057,7 +3057,7 @@ public final class ServerSmokeHarness {
             throw new AssertionError("Timed out after " + timeout + " waiting for " + marker
                     + ". Log:\n" + read(log));
         } finally {
-            // Rutter dispatches during preLaunch, well before world generation, so there is
+            // Nylium dispatches during preLaunch, well before world generation, so there is
             // never a reason to let the server finish booting.
             process.destroyForcibly();
             process.waitFor();
@@ -3076,14 +3076,14 @@ public final class ServerSmokeHarness {
 
 Add to `settings.gradle`:
 ```groovy
-include 'rutter-testmod'
+include 'nylium-testmod'
 include 'smoke'
 ```
 
 - [ ] **Step 12: Build**
 
-Run: `./gradlew build :rutter-testmod:moduleJars --console=plain`
-Expected: `BUILD SUCCESSFUL`, with four jars in `rutter-testmod/build/modules/`.
+Run: `./gradlew build :nylium-testmod:moduleJars --console=plain`
+Expected: `BUILD SUCCESSFUL`, with four jars in `nylium-testmod/build/modules/`.
 
 - [ ] **Step 13: Commit**
 
@@ -3097,15 +3097,15 @@ git commit -m "feat(core): invoke module entrypoints and add the smoke test harn
 ## Task 12: Fabric backend and its smoke tests
 
 **Files:**
-- Create: `rutter-bootstrap-fabric/build.gradle`
-- Create: `rutter-bootstrap-fabric/src/main/java/io/github/intisy/rutter/bootstrap/fabric/FabricPlatform.java`
-- Create: `rutter-bootstrap-fabric/src/main/java/io/github/intisy/rutter/bootstrap/fabric/RutterPreLaunch.java`
-- Create: `smoke/src/test/java/io/github/intisy/rutter/smoke/FabricSmokeTest.java`
+- Create: `nylium-bootstrap-fabric/build.gradle`
+- Create: `nylium-bootstrap-fabric/src/main/java/io/github/intisy/nylium/bootstrap/fabric/FabricPlatform.java`
+- Create: `nylium-bootstrap-fabric/src/main/java/io/github/intisy/nylium/bootstrap/fabric/NyliumPreLaunch.java`
+- Create: `smoke/src/test/java/io/github/intisy/nylium/smoke/FabricSmokeTest.java`
 - Modify: `settings.gradle`
 
 **Interfaces:**
-- Consumes: `Platform` (Task 3), `RutterKernel.boot` (Tasks 9, 11).
-- Produces: `FabricPlatform implements Platform`, and `RutterPreLaunch implements PreLaunchEntrypoint` as the `preLaunch` entrypoint named in `fabric.mod.json`.
+- Consumes: `Platform` (Task 3), `NyliumKernel.boot` (Tasks 9, 11).
+- Produces: `FabricPlatform implements Platform`, and `NyliumPreLaunch implements PreLaunchEntrypoint` as the `preLaunch` entrypoint named in `fabric.mod.json`.
 
 Fabric goes first because it is the least hostile of the four: `addToClassPath` is a single documented-in-practice call, and preLaunch is precisely the window between mod discovery and mixin transformation. Getting the pattern right here makes the other three mechanical.
 
@@ -3113,7 +3113,7 @@ Fabric goes first because it is the least hostile of the four: `addToClassPath` 
 
 ```groovy
 dependencies {
-    implementation project(':rutter-core')
+    implementation project(':nylium-core')
     compileOnly 'net.fabricmc:fabric-loader:0.16.9'
     compileOnly 'org.spongepowered:mixin:0.8.7'
 }
@@ -3122,12 +3122,12 @@ dependencies {
 - [ ] **Step 2: Write FabricPlatform**
 
 ```java
-package io.github.intisy.rutter.bootstrap.fabric;
+package io.github.intisy.nylium.bootstrap.fabric;
 
-import io.github.intisy.rutter.api.Environment;
-import io.github.intisy.rutter.api.Platform;
-import io.github.intisy.rutter.api.PlatformId;
-import io.github.intisy.rutter.api.RutterException;
+import io.github.intisy.nylium.api.Environment;
+import io.github.intisy.nylium.api.Platform;
+import io.github.intisy.nylium.api.PlatformId;
+import io.github.intisy.nylium.api.NyliumException;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.impl.launch.FabricLauncherBase;
@@ -3155,8 +3155,8 @@ final class FabricPlatform implements Platform {
         try {
             FabricLauncherBase.getLauncher().addToClassPath(jar);
         } catch (LinkageError e) {
-            throw new RutterException("This Fabric Loader does not expose addToClassPath; "
-                    + "Rutter needs Fabric Loader 0.14 or newer.", e);
+            throw new NyliumException("This Fabric Loader does not expose addToClassPath; "
+                    + "Nylium needs Fabric Loader 0.14 or newer.", e);
         }
     }
 
@@ -3179,37 +3179,37 @@ final class FabricPlatform implements Platform {
 - [ ] **Step 3: Write the preLaunch entrypoint**
 
 ```java
-package io.github.intisy.rutter.bootstrap.fabric;
+package io.github.intisy.nylium.bootstrap.fabric;
 
-import io.github.intisy.rutter.core.RutterKernel;
+import io.github.intisy.nylium.core.NyliumKernel;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
 
-public final class RutterPreLaunch implements PreLaunchEntrypoint {
+public final class NyliumPreLaunch implements PreLaunchEntrypoint {
 
     @Override
     public void onPreLaunch() {
-        RutterKernel.boot(
+        NyliumKernel.boot(
                 new FabricPlatform(),
-                RutterPreLaunch.class.getClassLoader(),
-                FabricLoader.getInstance().getGameDir().resolve("rutter").resolve("cache"));
+                NyliumPreLaunch.class.getClassLoader(),
+                FabricLoader.getInstance().getGameDir().resolve("nylium").resolve("cache"));
     }
 }
 ```
 
 - [ ] **Step 4: Assemble a universal jar in the test mod**
 
-Append to `rutter-testmod/build.gradle`:
+Append to `nylium-testmod/build.gradle`:
 
 ```groovy
 tasks.register('universalJar', Jar) {
     dependsOn tasks.named('moduleJars')
-    archiveFileName = 'rutter-testmod-universal.jar'
+    archiveFileName = 'nylium-testmod-universal.jar'
     destinationDirectory = layout.buildDirectory.dir('universal')
 
-    from project(':rutter-api').sourceSets.main.output
-    from project(':rutter-core').sourceSets.main.output
-    from project(':rutter-bootstrap-fabric').sourceSets.main.output
+    from project(':nylium-api').sourceSets.main.output
+    from project(':nylium-core').sourceSets.main.output
+    from project(':nylium-bootstrap-fabric').sourceSets.main.output
 
     from(layout.buildDirectory.dir('modules')) { into 'modules' }
 
@@ -3217,23 +3217,23 @@ tasks.register('universalJar', Jar) {
 module.0.path=modules/testmod-1.21.11.jar
 module.0.platforms=FABRIC
 module.0.minecraft=1.21.11
-module.0.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
+module.0.entrypoint=io.github.intisy.nylium.testmod.TestModEntry
 module.1.path=modules/testmod-1.21.10.jar
 module.1.platforms=FABRIC
 module.1.minecraft=1.21.10
-module.1.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
+module.1.entrypoint=io.github.intisy.nylium.testmod.TestModEntry
 '''.trim())) {
-        rename '.*', 'rutter-modules.properties'
+        rename '.*', 'nylium-modules.properties'
     }
 
     from(resources.text.fromString('''
 {
   "schemaVersion": 1,
-  "id": "rutter_testmod",
+  "id": "nylium_testmod",
   "version": "0.1.0",
-  "name": "Rutter Test Mod",
+  "name": "Nylium Test Mod",
   "environment": "*",
-  "entrypoints": { "preLaunch": ["io.github.intisy.rutter.bootstrap.fabric.RutterPreLaunch"] },
+  "entrypoints": { "preLaunch": ["io.github.intisy.nylium.bootstrap.fabric.NyliumPreLaunch"] },
   "depends": { "fabricloader": ">=0.14.0" }
 }
 '''.trim())) {
@@ -3242,12 +3242,12 @@ module.1.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
 }
 ```
 
-The module jars are *not* declared as Fabric nested jars. Fabric would try to load them as mods and fail their dependency checks; Rutter classpaths the chosen one itself, which is the entire point.
+The module jars are *not* declared as Fabric nested jars. Fabric would try to load them as mods and fail their dependency checks; Nylium classpaths the chosen one itself, which is the entire point.
 
 - [ ] **Step 5: Write the Fabric smoke test**
 
 ```java
-package io.github.intisy.rutter.smoke;
+package io.github.intisy.nylium.smoke;
 
 import org.junit.jupiter.api.Test;
 
@@ -3263,12 +3263,12 @@ class FabricSmokeTest {
     private static final Duration TIMEOUT = Duration.ofMinutes(3);
 
     private static String bootOn(String minecraftVersion) throws Exception {
-        Path server = Paths.get(System.getProperty("rutter.smoke.servers"))
+        Path server = Paths.get(System.getProperty("nylium.smoke.servers"))
                 .resolve("fabric-" + minecraftVersion);
-        Path marker = server.resolve("rutter-marker.txt");
+        Path marker = server.resolve("nylium-marker.txt");
         return ServerSmokeHarness.run(server, Arrays.asList(
                 "java",
-                "-Drutter.smoke.marker=" + marker.toAbsolutePath(),
+                "-Dnylium.smoke.marker=" + marker.toAbsolutePath(),
                 "-jar", "fabric-server-launch.jar",
                 "nogui"), marker, TIMEOUT);
     }
@@ -3306,32 +3306,32 @@ tasks.register('provisionFabricServers') {
             }
             new File(dir, 'mods').mkdirs()
             copy {
-                from project(':rutter-testmod').layout.buildDirectory.file('universal/rutter-testmod-universal.jar')
+                from project(':nylium-testmod').layout.buildDirectory.file('universal/nylium-testmod-universal.jar')
                 into new File(dir, 'mods')
             }
             new File(dir, 'eula.txt').text = 'eula=true\n'
         }
     }
-    dependsOn ':rutter-testmod:universalJar'
+    dependsOn ':nylium-testmod:universalJar'
 }
 
 tasks.named('test') {
     dependsOn tasks.named('provisionFabricServers')
-    systemProperty 'rutter.smoke.servers', serversDir.get().asFile.absolutePath
+    systemProperty 'nylium.smoke.servers', serversDir.get().asFile.absolutePath
 }
 ```
 
 - [ ] **Step 7: Register the subproject and run the smoke tests**
 
-Add `include 'rutter-bootstrap-fabric'` to `settings.gradle`.
+Add `include 'nylium-bootstrap-fabric'` to `settings.gradle`.
 
-Run: `./gradlew :smoke:test -PrutterSmoke --console=plain`
+Run: `./gradlew :smoke:test -PnyliumSmoke --console=plain`
 Expected: both tests PASS. If a server exits before the marker appears, the harness prints its log; the usual causes are a Fabric Loader too old for `addToClassPath` or a mistyped entrypoint in `fabric.mod.json`.
 
 - [ ] **Step 8: Run the offline build to confirm smoke stays opt-in**
 
 Run: `./gradlew build --console=plain`
-Expected: `BUILD SUCCESSFUL` without downloading a server, because `:smoke:test` is skipped absent `-PrutterSmoke`.
+Expected: `BUILD SUCCESSFUL` without downloading a server, because `:smoke:test` is skipped absent `-PnyliumSmoke`.
 
 - [ ] **Step 9: Commit**
 
@@ -3345,21 +3345,21 @@ git commit -m "feat(fabric): dispatch on fabric loader with a two-version smoke 
 ## Task 13: LaunchWrapper backend and its smoke test
 
 **Files:**
-- Create: `rutter-bootstrap-launchwrapper/build.gradle`
-- Create: `rutter-bootstrap-launchwrapper/src/main/java/io/github/intisy/rutter/bootstrap/launchwrapper/LaunchWrapperPlatform.java`
-- Create: `rutter-bootstrap-launchwrapper/src/main/java/io/github/intisy/rutter/bootstrap/launchwrapper/RutterTweaker.java`
-- Create: `smoke/src/test/java/io/github/intisy/rutter/smoke/LaunchWrapperSmokeTest.java`
-- Modify: `rutter-testmod/build.gradle`, `smoke/build.gradle`, `settings.gradle`
+- Create: `nylium-bootstrap-launchwrapper/build.gradle`
+- Create: `nylium-bootstrap-launchwrapper/src/main/java/io/github/intisy/nylium/bootstrap/launchwrapper/LaunchWrapperPlatform.java`
+- Create: `nylium-bootstrap-launchwrapper/src/main/java/io/github/intisy/nylium/bootstrap/launchwrapper/NyliumTweaker.java`
+- Create: `smoke/src/test/java/io/github/intisy/nylium/smoke/LaunchWrapperSmokeTest.java`
+- Modify: `nylium-testmod/build.gradle`, `smoke/build.gradle`, `settings.gradle`
 
 **Interfaces:**
-- Consumes: `Platform`, `RutterKernel.boot`.
-- Produces: `RutterTweaker implements ITweaker`, declared through the jar manifest's `TweakClass` attribute and Forge 1.7-1.12's coremod discovery.
+- Consumes: `Platform`, `NyliumKernel.boot`.
+- Produces: `NyliumTweaker implements ITweaker`, declared through the jar manifest's `TweakClass` attribute and Forge 1.7-1.12's coremod discovery.
 
 - [ ] **Step 1: Write the build file**
 
 ```groovy
 dependencies {
-    implementation project(':rutter-core')
+    implementation project(':nylium-core')
     compileOnly('net.minecraft:launchwrapper:of-2.3') {
         exclude module: 'lwjgl'
         exclude module: 'asm-debug-all'
@@ -3371,12 +3371,12 @@ dependencies {
 - [ ] **Step 2: Write LaunchWrapperPlatform**
 
 ```java
-package io.github.intisy.rutter.bootstrap.launchwrapper;
+package io.github.intisy.nylium.bootstrap.launchwrapper;
 
-import io.github.intisy.rutter.api.Environment;
-import io.github.intisy.rutter.api.Platform;
-import io.github.intisy.rutter.api.PlatformId;
-import io.github.intisy.rutter.api.RutterException;
+import io.github.intisy.nylium.api.Environment;
+import io.github.intisy.nylium.api.Platform;
+import io.github.intisy.nylium.api.PlatformId;
+import io.github.intisy.nylium.api.NyliumException;
 import net.minecraft.launchwrapper.Launch;
 import org.spongepowered.asm.mixin.Mixins;
 
@@ -3403,7 +3403,7 @@ final class LaunchWrapperPlatform implements Platform {
         try {
             Launch.classLoader.addURL(jar.toUri().toURL());
         } catch (MalformedURLException e) {
-            throw new RutterException("Could not add " + jar + " to the LaunchWrapper classloader", e);
+            throw new NyliumException("Could not add " + jar + " to the LaunchWrapper classloader", e);
         }
     }
 
@@ -3414,7 +3414,7 @@ final class LaunchWrapperPlatform implements Platform {
 
     @Override
     public Optional<String> nativeVersionProbe() {
-        Object version = Launch.blackboard == null ? null : Launch.blackboard.get("rutter.mcVersion");
+        Object version = Launch.blackboard == null ? null : Launch.blackboard.get("nylium.mcVersion");
         return Optional.ofNullable(version).map(Object::toString);
     }
 
@@ -3434,9 +3434,9 @@ The native probe reads a blackboard key rather than a loader API because LaunchW
 - [ ] **Step 3: Write the tweaker**
 
 ```java
-package io.github.intisy.rutter.bootstrap.launchwrapper;
+package io.github.intisy.nylium.bootstrap.launchwrapper;
 
-import io.github.intisy.rutter.core.RutterKernel;
+import io.github.intisy.nylium.core.NyliumKernel;
 import net.minecraft.launchwrapper.ITweaker;
 import net.minecraft.launchwrapper.LaunchClassLoader;
 import org.spongepowered.asm.launch.MixinBootstrap;
@@ -3445,7 +3445,7 @@ import java.io.File;
 import java.nio.file.Paths;
 import java.util.List;
 
-public final class RutterTweaker implements ITweaker {
+public final class NyliumTweaker implements ITweaker {
 
     private File gameDirectory = new File(".");
 
@@ -3460,10 +3460,10 @@ public final class RutterTweaker implements ITweaker {
     public void injectIntoClassLoader(LaunchClassLoader classLoader) {
         // Mixin must be up before any config is registered; on this era nothing else does it.
         MixinBootstrap.init();
-        RutterKernel.boot(
+        NyliumKernel.boot(
                 new LaunchWrapperPlatform(),
-                RutterTweaker.class.getClassLoader(),
-                Paths.get(gameDirectory.getAbsolutePath()).resolve("rutter").resolve("cache"));
+                NyliumTweaker.class.getClassLoader(),
+                Paths.get(gameDirectory.getAbsolutePath()).resolve("nylium").resolve("cache"));
     }
 
     @Override
@@ -3480,22 +3480,22 @@ public final class RutterTweaker implements ITweaker {
 
 - [ ] **Step 4: Add the LaunchWrapper module and manifest to the universal jar**
 
-In `rutter-testmod/build.gradle`, inside `universalJar`, add the bootstrap output and the manifest attribute, and extend the manifest text with the 1.7.10 module:
+In `nylium-testmod/build.gradle`, inside `universalJar`, add the bootstrap output and the manifest attribute, and extend the manifest text with the 1.7.10 module:
 
 ```groovy
-    from project(':rutter-bootstrap-launchwrapper').sourceSets.main.output
+    from project(':nylium-bootstrap-launchwrapper').sourceSets.main.output
 
     manifest {
-        attributes 'TweakClass': 'io.github.intisy.rutter.bootstrap.launchwrapper.RutterTweaker'
+        attributes 'TweakClass': 'io.github.intisy.nylium.bootstrap.launchwrapper.NyliumTweaker'
     }
 ```
 
-and append to the `rutter-modules.properties` text:
+and append to the `nylium-modules.properties` text:
 ```properties
 module.2.path=modules/testmod-1.7.10.jar
 module.2.platforms=LAUNCHWRAPPER
 module.2.minecraft=[1.7,1.12.2]
-module.2.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
+module.2.entrypoint=io.github.intisy.nylium.testmod.TestModEntry
 ```
 
 The range is broad because `MarkerClassProbe` reports a floor rather than an exact version on this era. That is a deliberate consequence of the probe's limits, not an oversight.
@@ -3503,7 +3503,7 @@ The range is broad because `MarkerClassProbe` reports a floor rather than an exa
 - [ ] **Step 5: Write the smoke test**
 
 ```java
-package io.github.intisy.rutter.smoke;
+package io.github.intisy.nylium.smoke;
 
 import org.junit.jupiter.api.Test;
 
@@ -3518,12 +3518,12 @@ class LaunchWrapperSmokeTest {
 
     @Test
     void loadsTheLegacyModuleOn1710() throws Exception {
-        Path server = Paths.get(System.getProperty("rutter.smoke.servers")).resolve("forge-1.7.10");
-        Path marker = server.resolve("rutter-marker.txt");
+        Path server = Paths.get(System.getProperty("nylium.smoke.servers")).resolve("forge-1.7.10");
+        Path marker = server.resolve("nylium-marker.txt");
 
         String result = ServerSmokeHarness.run(server, Arrays.asList(
                 "java",
-                "-Drutter.smoke.marker=" + marker.toAbsolutePath(),
+                "-Dnylium.smoke.marker=" + marker.toAbsolutePath(),
                 "-jar", "forge-server.jar",
                 "nogui"), marker, Duration.ofMinutes(3));
 
@@ -3538,14 +3538,14 @@ Append a `provisionForge1710` task to `smoke/build.gradle` that downloads the Fo
 
 - [ ] **Step 7: Run the smoke test**
 
-Add `include 'rutter-bootstrap-launchwrapper'` to `settings.gradle`.
+Add `include 'nylium-bootstrap-launchwrapper'` to `settings.gradle`.
 
-Run: `./gradlew :smoke:test -PrutterSmoke --tests '*LaunchWrapperSmokeTest' --console=plain`
+Run: `./gradlew :smoke:test -PnyliumSmoke --tests '*LaunchWrapperSmokeTest' --console=plain`
 Expected: PASS. Java 8 must be the JVM running this server; if the toolchain resolves something newer, pin it in the command list.
 
 - [ ] **Step 8: Confirm Fabric still passes**
 
-Run: `./gradlew :smoke:test -PrutterSmoke --console=plain`
+Run: `./gradlew :smoke:test -PnyliumSmoke --console=plain`
 Expected: all three smoke tests PASS, proving the LaunchWrapper bootstrap is inert under Fabric.
 
 - [ ] **Step 9: Commit**
@@ -3560,15 +3560,15 @@ git commit -m "feat(launchwrapper): dispatch on the 1.7 to 1.12 tweaker era"
 ## Task 14: ModLauncher 8 backend and its smoke test
 
 **Files:**
-- Create: `rutter-bootstrap-modlauncher8/build.gradle`
-- Create: `rutter-bootstrap-modlauncher8/src/main/java/io/github/intisy/rutter/bootstrap/ml8/Ml8Platform.java`
-- Create: `rutter-bootstrap-modlauncher8/src/main/java/io/github/intisy/rutter/bootstrap/ml8/RutterMl8Service.java`
-- Create: `smoke/src/test/java/io/github/intisy/rutter/smoke/ModLauncher8SmokeTest.java`
-- Modify: `rutter-testmod/build.gradle`, `smoke/build.gradle`, `settings.gradle`
+- Create: `nylium-bootstrap-modlauncher8/build.gradle`
+- Create: `nylium-bootstrap-modlauncher8/src/main/java/io/github/intisy/nylium/bootstrap/ml8/Ml8Platform.java`
+- Create: `nylium-bootstrap-modlauncher8/src/main/java/io/github/intisy/nylium/bootstrap/ml8/NyliumMl8Service.java`
+- Create: `smoke/src/test/java/io/github/intisy/nylium/smoke/ModLauncher8SmokeTest.java`
+- Modify: `nylium-testmod/build.gradle`, `smoke/build.gradle`, `settings.gradle`
 
 **Interfaces:**
-- Consumes: `Platform`, `RutterKernel.boot`.
-- Produces: `RutterMl8Service implements ITransformationService`, registered in `META-INF/services/cpw.mods.modlauncher.api.ITransformationService`.
+- Consumes: `Platform`, `NyliumKernel.boot`.
+- Produces: `NyliumMl8Service implements ITransformationService`, registered in `META-INF/services/cpw.mods.modlauncher.api.ITransformationService`.
 
 **The shared services file is the trap here.** ModLauncher 8 and 9 read the same service file, and `ServiceLoader` instantiates every entry. So both services are listed, and each must recognise whether it is on its own generation and no-op otherwise. `cpw.mods.jarhandling.SecureJar` exists only on ModLauncher 9+, which makes it the discriminator.
 
@@ -3578,7 +3578,7 @@ This is also why **every bootstrap emits Java 8 bytecode, including the ModLaunc
 
 ```groovy
 dependencies {
-    implementation project(':rutter-core')
+    implementation project(':nylium-core')
     compileOnly 'cpw.mods:modlauncher:8.1.3'
     compileOnly 'org.spongepowered:mixin:0.8.7'
 }
@@ -3587,11 +3587,11 @@ dependencies {
 - [ ] **Step 2: Write Ml8Platform**
 
 ```java
-package io.github.intisy.rutter.bootstrap.ml8;
+package io.github.intisy.nylium.bootstrap.ml8;
 
-import io.github.intisy.rutter.api.Environment;
-import io.github.intisy.rutter.api.Platform;
-import io.github.intisy.rutter.api.PlatformId;
+import io.github.intisy.nylium.api.Environment;
+import io.github.intisy.nylium.api.Platform;
+import io.github.intisy.nylium.api.PlatformId;
 import org.spongepowered.asm.mixin.Mixins;
 
 import java.nio.file.Path;
@@ -3616,7 +3616,7 @@ final class Ml8Platform implements Platform {
     @Override
     public void addToClasspath(Path jar) {
         // ModLauncher 8 takes jars back from the scanning phase rather than accepting a push,
-        // so the kernel's call is recorded and handed over in RutterMl8Service.
+        // so the kernel's call is recorded and handed over in NyliumMl8Service.
         pending.add(jar);
     }
 
@@ -3653,7 +3653,7 @@ final class Ml8Platform implements Platform {
 - [ ] **Step 3: Write the transformation service**
 
 ```java
-package io.github.intisy.rutter.bootstrap.ml8;
+package io.github.intisy.nylium.bootstrap.ml8;
 
 import cpw.mods.modlauncher.api.IEnvironment;
 import cpw.mods.modlauncher.api.ITransformationService;
@@ -3666,13 +3666,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public final class RutterMl8Service implements ITransformationService {
+public final class NyliumMl8Service implements ITransformationService {
 
     private Ml8Platform platform;
 
     @Override
     public String name() {
-        return "rutter-ml8";
+        return "nylium-ml8";
     }
 
     @Override
@@ -3685,10 +3685,10 @@ public final class RutterMl8Service implements ITransformationService {
             return;
         }
         platform = new Ml8Platform();
-        io.github.intisy.rutter.core.RutterKernel.boot(
+        io.github.intisy.nylium.core.NyliumKernel.boot(
                 platform,
-                RutterMl8Service.class.getClassLoader(),
-                Paths.get(".").resolve("rutter").resolve("cache"));
+                NyliumMl8Service.class.getClassLoader(),
+                Paths.get(".").resolve("nylium").resolve("cache"));
     }
 
     @Override
@@ -3699,7 +3699,7 @@ public final class RutterMl8Service implements ITransformationService {
         java.util.Map<String, Path> extra = new java.util.LinkedHashMap<>();
         int index = 0;
         for (Path jar : platform.pending()) {
-            extra.put("rutter-module-" + index++, jar);
+            extra.put("nylium-module-" + index++, jar);
         }
         return extra;
     }
@@ -3712,7 +3712,7 @@ public final class RutterMl8Service implements ITransformationService {
     private static boolean isModLauncher9() {
         try {
             Class.forName("cpw.mods.jarhandling.SecureJar", false,
-                    RutterMl8Service.class.getClassLoader());
+                    NyliumMl8Service.class.getClassLoader());
             return true;
         } catch (ClassNotFoundException | LinkageError e) {
             return false;
@@ -3725,21 +3725,21 @@ If `getExtraJarPaths` is absent or differently shaped on the ModLauncher 8 versi
 
 - [ ] **Step 4: Add the 1.16.5 module and services file**
 
-Extend `universalJar` in `rutter-testmod/build.gradle` with the ModLauncher 8 bootstrap output, a fourth module entry, and the services file listing both ModLauncher services:
+Extend `universalJar` in `nylium-testmod/build.gradle` with the ModLauncher 8 bootstrap output, a fourth module entry, and the services file listing both ModLauncher services:
 
 ```properties
 module.3.path=modules/testmod-1.16.5.jar
 module.3.platforms=MODLAUNCHER_8
 module.3.minecraft=[1.13,1.16.5]
-module.3.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
+module.3.entrypoint=io.github.intisy.nylium.testmod.TestModEntry
 ```
 
 ```groovy
-    from project(':rutter-bootstrap-modlauncher8').sourceSets.main.output
+    from project(':nylium-bootstrap-modlauncher8').sourceSets.main.output
 
     from(resources.text.fromString(
-            'io.github.intisy.rutter.bootstrap.ml8.RutterMl8Service\n'
-                    + 'io.github.intisy.rutter.bootstrap.ml9.RutterMl9Service\n')) {
+            'io.github.intisy.nylium.bootstrap.ml8.NyliumMl8Service\n'
+                    + 'io.github.intisy.nylium.bootstrap.ml9.NyliumMl9Service\n')) {
         into 'META-INF/services'
         rename '.*', 'cpw.mods.modlauncher.api.ITransformationService'
     }
@@ -3750,7 +3750,7 @@ The ModLauncher 9 entry is listed now even though Task 15 writes that class, so 
 - [ ] **Step 5: Write the smoke test and provisioning**
 
 ```java
-package io.github.intisy.rutter.smoke;
+package io.github.intisy.nylium.smoke;
 
 import org.junit.jupiter.api.Test;
 
@@ -3765,12 +3765,12 @@ class ModLauncher8SmokeTest {
 
     @Test
     void loadsThe1165ModuleOn1165() throws Exception {
-        Path server = Paths.get(System.getProperty("rutter.smoke.servers")).resolve("forge-1.16.5");
-        Path marker = server.resolve("rutter-marker.txt");
+        Path server = Paths.get(System.getProperty("nylium.smoke.servers")).resolve("forge-1.16.5");
+        Path marker = server.resolve("nylium-marker.txt");
 
         String result = ServerSmokeHarness.run(server, Arrays.asList(
                 "java",
-                "-Drutter.smoke.marker=" + marker.toAbsolutePath(),
+                "-Dnylium.smoke.marker=" + marker.toAbsolutePath(),
                 "-jar", "forge-server.jar",
                 "nogui"), marker, Duration.ofMinutes(4));
 
@@ -3783,9 +3783,9 @@ Add a `provisionForge1165` task mirroring `provisionForge1710`: download the For
 
 - [ ] **Step 6: Run every smoke test**
 
-Add `include 'rutter-bootstrap-modlauncher8'` to `settings.gradle`.
+Add `include 'nylium-bootstrap-modlauncher8'` to `settings.gradle`.
 
-Run: `./gradlew :smoke:test -PrutterSmoke --console=plain`
+Run: `./gradlew :smoke:test -PnyliumSmoke --console=plain`
 Expected: four tests PASS.
 
 - [ ] **Step 7: Commit**
@@ -3800,16 +3800,16 @@ git commit -m "feat(modlauncher8): dispatch on the 1.13 to 1.16 transformation s
 ## Task 15: ModLauncher 9+ backend and its smoke test
 
 **Files:**
-- Create: `rutter-bootstrap-modlauncher9/build.gradle`
-- Create: `rutter-bootstrap-modlauncher9/src/main/java/io/github/intisy/rutter/bootstrap/ml9/Ml9Platform.java`
-- Create: `rutter-bootstrap-modlauncher9/src/main/java/io/github/intisy/rutter/bootstrap/ml9/RutterMl9Service.java`
-- Create: `smoke/src/test/java/io/github/intisy/rutter/smoke/ModLauncher9SmokeTest.java`
-- Modify: `rutter-testmod/build.gradle`, `smoke/build.gradle`, `settings.gradle`
+- Create: `nylium-bootstrap-modlauncher9/build.gradle`
+- Create: `nylium-bootstrap-modlauncher9/src/main/java/io/github/intisy/nylium/bootstrap/ml9/Ml9Platform.java`
+- Create: `nylium-bootstrap-modlauncher9/src/main/java/io/github/intisy/nylium/bootstrap/ml9/NyliumMl9Service.java`
+- Create: `smoke/src/test/java/io/github/intisy/nylium/smoke/ModLauncher9SmokeTest.java`
+- Modify: `nylium-testmod/build.gradle`, `smoke/build.gradle`, `settings.gradle`
 - Read first: `docs/superpowers/plans/SPIKE-modlauncher9.md`
 
 **Interfaces:**
-- Consumes: `Platform`, `RutterKernel.boot`, and the verified API calls recorded by Task 2.
-- Produces: `RutterMl9Service implements ITransformationService`, added to the shared services file.
+- Consumes: `Platform`, `NyliumKernel.boot`, and the verified API calls recorded by Task 2.
+- Produces: `NyliumMl9Service implements ITransformationService`, added to the shared services file.
 
 **Implement from the spike document, not from memory.** Task 2 established which layer, which method, and which lifecycle point actually work, separately for Forge and NeoForge. Where this task's skeleton disagrees with the spike findings, the findings win.
 
@@ -3819,23 +3819,23 @@ Constraints carried from Task 14: this artifact emits **Java 8 bytecode** despit
 
 ```groovy
 dependencies {
-    implementation project(':rutter-core')
+    implementation project(':nylium-core')
     compileOnly 'cpw.mods:modlauncher:10.0.9'
     compileOnly 'cpw.mods:securejarhandler:2.1.10'
     compileOnly 'org.spongepowered:mixin:0.8.7'
 }
 ```
 
-No `rutterJavaRelease` override: release 8 is inherited from the root build deliberately.
+No `nyliumJavaRelease` override: release 8 is inherited from the root build deliberately.
 
 - [ ] **Step 2: Write Ml9Platform**
 
 ```java
-package io.github.intisy.rutter.bootstrap.ml9;
+package io.github.intisy.nylium.bootstrap.ml9;
 
-import io.github.intisy.rutter.api.Environment;
-import io.github.intisy.rutter.api.Platform;
-import io.github.intisy.rutter.api.PlatformId;
+import io.github.intisy.nylium.api.Environment;
+import io.github.intisy.nylium.api.Platform;
+import io.github.intisy.nylium.api.PlatformId;
 import org.spongepowered.asm.mixin.Mixins;
 
 import java.nio.file.Path;
@@ -3860,7 +3860,7 @@ final class Ml9Platform implements Platform {
     @Override
     public void addToClasspath(Path jar) {
         // The module layer is assembled during scanning, so jars are buffered here and offered
-        // back to ModLauncher in RutterMl9Service.
+        // back to ModLauncher in NyliumMl9Service.
         pending.add(jar);
     }
 
@@ -3901,7 +3901,7 @@ final class Ml9Platform implements Platform {
 - [ ] **Step 3: Write the transformation service**
 
 ```java
-package io.github.intisy.rutter.bootstrap.ml9;
+package io.github.intisy.nylium.bootstrap.ml9;
 
 import cpw.mods.jarhandling.SecureJar;
 import cpw.mods.modlauncher.api.IEnvironment;
@@ -3916,13 +3916,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
-public final class RutterMl9Service implements ITransformationService {
+public final class NyliumMl9Service implements ITransformationService {
 
     private Ml9Platform platform;
 
     @Override
     public String name() {
-        return "rutter-ml9";
+        return "nylium-ml9";
     }
 
     @Override
@@ -3935,10 +3935,10 @@ public final class RutterMl9Service implements ITransformationService {
             return;
         }
         platform = new Ml9Platform();
-        io.github.intisy.rutter.core.RutterKernel.boot(
+        io.github.intisy.nylium.core.NyliumKernel.boot(
                 platform,
-                RutterMl9Service.class.getClassLoader(),
-                Paths.get(".").resolve("rutter").resolve("cache"));
+                NyliumMl9Service.class.getClassLoader(),
+                Paths.get(".").resolve("nylium").resolve("cache"));
     }
 
     @Override
@@ -3961,7 +3961,7 @@ public final class RutterMl9Service implements ITransformationService {
     private static boolean isModLauncher9() {
         try {
             Class.forName("cpw.mods.jarhandling.SecureJar", false,
-                    RutterMl9Service.class.getClassLoader());
+                    NyliumMl9Service.class.getClassLoader());
             return true;
         } catch (ClassNotFoundException | LinkageError e) {
             return false;
@@ -3974,13 +3974,13 @@ Substitute the layer and method that Task 2 proved, if they differ from `Layer.G
 
 - [ ] **Step 4: Extend the services file and add the module**
 
-In `rutter-testmod/build.gradle`, add the ModLauncher 9 bootstrap output, add its class to the services file text (the second line deferred in Task 14 Step 4), and add the module:
+In `nylium-testmod/build.gradle`, add the ModLauncher 9 bootstrap output, add its class to the services file text (the second line deferred in Task 14 Step 4), and add the module:
 
 ```properties
 module.4.path=modules/testmod-1.21.11.jar
 module.4.platforms=MODLAUNCHER_9
 module.4.minecraft=[1.17,)
-module.4.entrypoint=io.github.intisy.rutter.testmod.TestModEntry
+module.4.entrypoint=io.github.intisy.nylium.testmod.TestModEntry
 ```
 
 Also add `META-INF/mods.toml` and `META-INF/neoforge.mods.toml` to the jar so Forge and NeoForge accept it as a mod. Both may coexist: each loader reads only its own file.
@@ -3988,7 +3988,7 @@ Also add `META-INF/mods.toml` and `META-INF/neoforge.mods.toml` to the jar so Fo
 - [ ] **Step 5: Write the smoke test and provisioning**
 
 ```java
-package io.github.intisy.rutter.smoke;
+package io.github.intisy.nylium.smoke;
 
 import org.junit.jupiter.api.Test;
 
@@ -4003,12 +4003,12 @@ class ModLauncher9SmokeTest {
 
     @Test
     void loadsTheModernModuleOnNeoForge12111() throws Exception {
-        Path server = Paths.get(System.getProperty("rutter.smoke.servers")).resolve("neoforge-1.21.11");
-        Path marker = server.resolve("rutter-marker.txt");
+        Path server = Paths.get(System.getProperty("nylium.smoke.servers")).resolve("neoforge-1.21.11");
+        Path marker = server.resolve("nylium-marker.txt");
 
         String result = ServerSmokeHarness.run(server, Arrays.asList(
                 "java",
-                "-Drutter.smoke.marker=" + marker.toAbsolutePath(),
+                "-Dnylium.smoke.marker=" + marker.toAbsolutePath(),
                 "-jar", "neoforge-server.jar",
                 "nogui"), marker, Duration.ofMinutes(4));
 
@@ -4021,9 +4021,9 @@ Add a `provisionNeoForge12111` task following the same shape as the Forge ones, 
 
 - [ ] **Step 6: Run the whole smoke matrix**
 
-Add `include 'rutter-bootstrap-modlauncher9'` to `settings.gradle`.
+Add `include 'nylium-bootstrap-modlauncher9'` to `settings.gradle`.
 
-Run: `./gradlew :smoke:test -PrutterSmoke --console=plain`
+Run: `./gradlew :smoke:test -PnyliumSmoke --console=plain`
 Expected: five tests PASS: Fabric 1.21.11, Fabric 1.21.10, LaunchWrapper 1.7.10, ModLauncher 8 1.16.5, ModLauncher 9 1.21.11. This is the spec's definition of done for SP-1.
 
 - [ ] **Step 7: Verify the offline build and the purity check**
@@ -4048,7 +4048,7 @@ git commit -m "feat(modlauncher9): dispatch into the module layer on forge and n
 - Modify: `settings.gradle` (nothing further; final state check)
 
 **Interfaces:**
-- Consumes: a repo where `./gradlew build` is green offline and `./gradlew :smoke:test -PrutterSmoke` is green with network.
+- Consumes: a repo where `./gradlew build` is green offline and `./gradlew :smoke:test -PnyliumSmoke` is green with network.
 
 Per the global CI rule, this repo carries **no workflow logic**. `build.yml` is a thin caller of a reusable workflow in `intisy/workflows`.
 
@@ -4063,7 +4063,7 @@ Look for a Gradle build workflow exposing `workflow_call` with inputs for the JD
 
 Clone `intisy/workflows`, add `.github/workflows/gradle-build.yml` with `on: workflow_call`, inputs `java_versions` (string, newline separated), `default_branch` (string, no hardcoded default beyond the caller's own), `development_branch` (string), and `gradle_tasks` (string, default `build`). Every repo-specific value is an input. Commit and push there, then return here.
 
-Do **not** write this logic into the Rutter repo and move it later.
+Do **not** write this logic into the Nylium repo and move it later.
 
 - [ ] **Step 3: Write the thin caller**
 
@@ -4102,7 +4102,7 @@ Expected: green. The likely first failure is a Java 8 toolchain missing on the r
 
 - [ ] **Step 5: Add the README template**
 
-`README.md` is generated and lives only on the default branch, so this branch carries the template. Write `docs/README.template.md` covering: what Rutter is, the compatibility contract, the four backends and their version spans, the manifest format with a worked example, and a minimal consumer walkthrough. Do not create `README.md` by hand.
+`README.md` is generated and lives only on the default branch, so this branch carries the template. Write `docs/README.template.md` covering: what Nylium is, the compatibility contract, the four backends and their version spans, the manifest format with a worked example, and a minimal consumer walkthrough. Do not create `README.md` by hand.
 
 - [ ] **Step 6: Commit**
 
@@ -4123,8 +4123,8 @@ git push
 1. **Manifest format is `.properties`, not hand-rolled JSON.** `java.util.Properties` is in the JDK and module descriptors are flat, so the parser and its bug surface vanish. The spec has been updated to match.
 2. **All four bootstraps emit Java 8 bytecode**, where the spec put ModLauncher 9+ at Java 17. ModLauncher 8 and 9 share one `ServiceLoader` file and `ServiceLoader` instantiates every entry, so a Java 17 class file would throw `UnsupportedClassVersionError` and kill the game on ModLauncher 8. The spec's artifact table needs the same correction.
 
-**One gap found and closed during review:** nothing in a dispatched module would ever execute, because the loader finishes mod discovery before Rutter runs. Module entrypoints (Task 11) close this. They are added in Task 11 rather than Task 5 because the extension is far easier to motivate and test once the kernel exists.
+**One gap found and closed during review:** nothing in a dispatched module would ever execute, because the loader finishes mod discovery before Nylium runs. Module entrypoints (Task 11) close this. They are added in Task 11 rather than Task 5 because the extension is far easier to motivate and test once the kernel exists.
 
 **Known non-concreteness, and why it is unavoidable:** Tasks 13 to 15 leave three loader-installer URLs and the exact `ITransformationService` method shapes to be pinned at execution time. The ModLauncher APIs differ across Forge and NeoForge point releases, and the spike in Task 2 exists precisely to resolve them against real servers rather than guessing here. Each of those steps names what to substitute and where to record it. Every other step carries the actual code.
 
-**Type consistency check:** `Platform`'s five methods are identical across Tasks 3, 9, 12, 13, 14 and 15. `ModuleDescriptor` gains `entrypoint()` in Task 11 and every later reference accounts for it. `RutterKernel.boot(Platform, ClassLoader, Path)` keeps one signature from Task 9 onward. `ModuleManifest.RESOURCE` is `rutter-modules.properties` in Tasks 5, 9, 11 and 12 alike.
+**Type consistency check:** `Platform`'s five methods are identical across Tasks 3, 9, 12, 13, 14 and 15. `ModuleDescriptor` gains `entrypoint()` in Task 11 and every later reference accounts for it. `NyliumKernel.boot(Platform, ClassLoader, Path)` keeps one signature from Task 9 onward. `ModuleManifest.RESOURCE` is `nylium-modules.properties` in Tasks 5, 9, 11 and 12 alike.

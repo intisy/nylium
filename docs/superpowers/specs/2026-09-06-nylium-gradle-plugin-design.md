@@ -1,28 +1,28 @@
-# Rutter Gradle Packaging Plugin (SP-2) - Design
+# Nylium Gradle Packaging Plugin (SP-2) - Design
 
 **Date:** 2026-09-06
 **Status:** Approved (design)
-**Repo:** `minecraft/mods/Rutter` (`intisy/rutter`)
-**Program:** `2026-09-05-rutter-program-overview.md`
+**Repo:** `minecraft/mods/Nylium` (`intisy/nylium`)
+**Program:** `2026-09-05-nylium-program-overview.md`
 **Depends on:** SP-1 (kernel), complete
 
 ## Goal
 
-A published Gradle plugin that assembles a Rutter universal jar from a declaration, replacing the
-hand-rolled packaging that SP-1 proved out in `rutter-testmod/build.gradle`.
+A published Gradle plugin that assembles a Nylium universal jar from a declaration, replacing the
+hand-rolled packaging that SP-1 proved out in `nylium-testmod/build.gradle`.
 
 ## Why this exists
 
 The hand-rolled block works, and it is exactly the wrong thing to hand a consumer. Its
-`rutter-modules.properties` is a literal string sitting beside the `moduleIds` list it describes,
+`nylium-modules.properties` is a literal string sitting beside the `moduleIds` list it describes,
 so five module paths, five entrypoints and five indices are all maintained by hand next to the data
 they duplicate. Nothing checks that `module.3.path` names a jar the build actually produces. The
 manifest is emitted through `resources.text.fromString`, which SP-1 found regenerates a fresh temp
 path on every configuration, so it is not a tracked task input and a stale jar can survive a
 rebuild.
 
-A consumer also cannot reach the pieces the way the test mod does: `universalJar` pulls Rutter's
-classes through `project(':rutter-api').sourceSets.main.output`, which only works inside this repo.
+A consumer also cannot reach the pieces the way the test mod does: `universalJar` pulls Nylium's
+classes through `project(':nylium-api').sourceSets.main.output`, which only works inside this repo.
 
 ## Non-goals
 
@@ -33,8 +33,8 @@ classes through `project(':rutter-api').sourceSets.main.output`, which only work
 
 ## Structure
 
-New subproject `rutter-gradle`, published as `io.github.intisy.rutter:rutter-gradle`, exposing
-plugin id `io.github.intisy.rutter`.
+New subproject `nylium-gradle`, published as `io.github.intisy.nylium:nylium-gradle`, exposing
+plugin id `io.github.intisy.nylium`.
 
 - Java 8 bytecode, like every other artifact here, so `checkClassFileVersion` covers it unchanged
   and old consumer builds can apply it. The ModLauncher `ServiceLoader` reason does not apply to a
@@ -43,17 +43,17 @@ plugin id `io.github.intisy.rutter`.
   present there, and nothing newer is needed. **Superseded as built:** every TestKit run uses this
   repository's own wrapper, so 7.6 is never exercised and 8.x is the tested floor. `CONTENT.md`
   documents 8.x.
-- `gradleApi()` is `compileOnly`. `rutter-core` is a real dependency, because validation reuses the
+- `gradleApi()` is `compileOnly`. `nylium-core` is a real dependency, because validation reuses the
   kernel's own parsers.
 
 **The plugin and the embedded library ship as one version.** The plugin resolves the runtime pieces
-at its own version, so "bump the Rutter version" stays the single action the founding compatibility
+at its own version, so "bump the Nylium version" stays the single action the founding compatibility
 contract promises.
 
 ## The DSL
 
 ```groovy
-rutter {
+nylium {
     mod {
         id      = 'baritone'
         name    = 'Baritone'
@@ -65,7 +65,7 @@ rutter {
         jar        = tasks.named('remapJar').flatMap { it.archiveFile }
         platforms  = ['FABRIC']
         minecraft  = '1.21.11'
-        entrypoint = 'baritone.RutterEntry'
+        entrypoint = 'baritone.NyliumEntry'
         mixins     = ['mixins.baritone.json']
         // optional: environment, priority
     }
@@ -83,8 +83,8 @@ remapping. A provider accepts any toolchain and matches the pre-remapped-modules
 
 ## Selective embedding
 
-The plugin creates a resolvable `rutterEmbed` configuration holding `rutter-api`, `rutter-core`,
-and one `rutter-bootstrap-*` per **declared** platform, then unpacks it into the universal jar.
+The plugin creates a resolvable `nyliumEmbed` configuration holding `nylium-api`, `nylium-core`,
+and one `nylium-bootstrap-*` per **declared** platform, then unpacks it into the universal jar.
 
 This is the consumer's "only the parts we need", derived rather than configured, and it is not
 merely an optimisation: the two ModLauncher backends share a single
@@ -95,7 +95,7 @@ contains is a function of which platforms were declared.
 
 | Artifact | Emitted when |
 | --- | --- |
-| `rutter-modules.properties` | always |
+| `nylium-modules.properties` | always |
 | `fabric.mod.json` | FABRIC declared |
 | `META-INF/services/...ITransformationService` | MODLAUNCHER_8 or MODLAUNCHER_9 declared, one line each |
 | `META-INF/services/...ILaunchPluginService` | MODLAUNCHER_9 declared |
@@ -104,7 +104,7 @@ contains is a function of which platforms were declared.
 The generated `fabric.mod.json` differs structurally from a normal mod's, which is why the plugin
 generates it rather than merging the consumer's:
 
-- **`entrypoints.preLaunch`** is Rutter's, so the kernel boots before the game.
+- **`entrypoints.preLaunch`** is Nylium's, so the kernel boots before the game.
 - **No `mixins` block.** Per-version mixin configs live inside the module jar and are registered
   through `Platform.registerMixinConfig`. A config named in the outer jar would not be found there.
 - **No `depends.minecraft` at all** by default, overridable in `mod {}` for a consumer who wants a
@@ -117,14 +117,14 @@ either would be refused by the loader on every version but one.
 
 Omitting the key entirely, rather than emitting `"*"`, is deliberate on two counts: it is what the
 test mod proven on five servers actually ships, so the default reproduces a known-good artifact
-byte for byte; and it avoids computing a Fabric version predicate from a union of Rutter ranges,
+byte for byte; and it avoids computing a Fabric version predicate from a union of Nylium ranges,
 which would be a second version algebra and a place to be subtly wrong. The cost is that an
 out-of-range launch fails with `NoCompatibleModuleException` instead of a loader refusal, which
 names the problem better anyway.
 
 ### Metadata deliberately not generated
 
-`mods.toml` and `neoforge.mods.toml` are **not** emitted. Rutter's ModLauncher backends reach
+`mods.toml` and `neoforge.mods.toml` are **not** emitted. Nylium's ModLauncher backends reach
 ModLauncher's own SPI and never enter FML's mod-loading pipeline, which is why the proven test mod
 ships no `mods.toml` at all. SP-1's limitation (2) records `mods.toml` as the *candidate* route to
 making ML9 modules installable from `mods/`, and that is unresolved. Generating metadata whose
@@ -142,16 +142,16 @@ This is where the plugin earns its keep over a copied build block. Each rejectio
 4. Duplicate module names, and an empty module set, are rejected.
 5. A `mixins` entry absent from its own module jar is rejected. This is the exact bug class behind
    limitation (2), and it can only be checked by looking inside the jar, so it runs at execution time.
-6. A module jar containing `rutter-modules.properties` or Rutter API classes is rejected: that means
-   the consumer shadowed Rutter into a module by accident.
+6. A module jar containing `nylium-modules.properties` or Nylium API classes is rejected: that means
+   the consumer shadowed Nylium into a module by accident.
 
 ## Tasks
 
-- `rutterManifest` writes `rutter-modules.properties` from a `@Nested` list of module specs with
+- `nyliumManifest` writes `nylium-modules.properties` from a `@Nested` list of module specs with
   annotated inputs and a real `@OutputFile`. Being a properly declared task is the fix for SP-1's
   untracked-input staleness defect, and it gets an explicit up-to-date-then-rebuild test.
-- `rutterMetadata` writes the generated loader files for the declared platforms.
-- `rutterUniversalJar` assembles: embedded Rutter parts, module jars under `modules/`, generated
+- `nyliumMetadata` writes the generated loader files for the declared platforms.
+- `nyliumUniversalJar` assembles: embedded Nylium parts, module jars under `modules/`, generated
   metadata, and the `TweakClass` attribute when LaunchWrapper is in play.
 
 ## Testing
@@ -162,24 +162,24 @@ Three layers, ordered by how much they can actually catch:
 2. **Functional, via Gradle TestKit.** Apply the plugin to a synthetic project, build, assert the
    jar's entry set; then assert `UP-TO-DATE` on a second run and a genuine rebuild after a module
    changes.
-3. **Differential, against the known-good artifact.** Rebuild `rutter-testmod`'s universal jar
+3. **Differential, against the known-good artifact.** Rebuild `nylium-testmod`'s universal jar
    through the plugin and require it to match the hand-rolled jar: identical entry set, identical
    bytes for every generated metadata file, identical bytes for each embedded module jar, and
    identical bytes for **every remaining entry**, skipping only directory entries, the manifest, and
    entries a more specific assertion already covers.
 
 Content-comparing only the metadata while name-comparing the hundreds of embedded class entries
-would let a stale or wrong-version `rutter-core` pass, reducing the claim from "reproduces the
+would let a stale or wrong-version `nylium-core` pass, reducing the claim from "reproduces the
 artifact" to "reproduces its shape". Any legitimate difference belongs in a named allowlist rather
 than a loosened assertion; as built the allowlist is empty, so the reproduction is exact. The
 `TweakClass` manifest attribute gets its own assertion, because the manifest is excluded from the
 byte comparison and a misspelling there would break the Forge 1.7.10 boot path with an otherwise
 green gate.
 
-`rutter-gradle` stays an ordinary subproject and the fixture applies the plugin through TestKit's
+`nylium-gradle` stays an ordinary subproject and the fixture applies the plugin through TestKit's
 `withPluginClasspath()`. That is TestKit's intended mechanism, it needs no publishing step, and it
 avoids restructuring `settings.gradle` into a composite build just so a sibling can apply a plugin,
-which would also take `rutter-gradle` outside the root conventions that give every artifact here its
+which would also take `nylium-gradle` outside the root conventions that give every artifact here its
 `checkClassFileVersion` and Java 8 floor.
 
 Layer 3 is the acceptance gate, and it is chosen because it can fail: it compares against an

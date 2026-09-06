@@ -1,6 +1,6 @@
-# Rutter SP-1: Controller Rulings
+# Nylium SP-1: Controller Rulings
 
-Decisions taken during execution of `2026-09-05-rutter-kernel.md` without pausing for the
+Decisions taken during execution of `2026-09-05-nylium-kernel.md` without pausing for the
 owner, each with its reasoning and what it costs if wrong. Preserved from the execution ledger
 before that scratch workspace was deleted. 72 rulings across 16 tasks.
 
@@ -9,22 +9,22 @@ Read this if you want to rework anything I decided on your behalf.
 ## T1 writes only the `junit5Runs` test; the no-op `compilesToJava8Bytecode` and its Step 8 deletion are dropped - a test asserting `"1.8"` against a ternary that yields `"1.8"` either way verifies nothing, and the review rubric treats it as a defect. Cost if wrong: none; bytecode targeting is verified by T10's purity task and by the ML8 smoke test in T14.
 
 
-## T2's spike compiles at release 8 with no `rutterJavaRelease` override and uses `Collections.singletonList`/`Collections.emptyList` instead of `List.of`; the spike additionally records whether release-8 compilation against ModLauncher 9 APIs succeeds. The Global Constraints require Java 8 bytecode everywhere, and the spike exists to de-risk exactly this backend, so it must validate the constraint rather than sidestep it. Cost if wrong: if release 8 cannot compile against ModLauncher 9 APIs, the shared-services-file design in R7 collapses and both ML backends need separate discovery mechanisms - which is precisely what the spike is for.
+## T2's spike compiles at release 8 with no `nyliumJavaRelease` override and uses `Collections.singletonList`/`Collections.emptyList` instead of `List.of`; the spike additionally records whether release-8 compilation against ModLauncher 9 APIs succeeds. The Global Constraints require Java 8 bytecode everywhere, and the spike exists to de-risk exactly this backend, so it must validate the constraint rather than sidestep it. Cost if wrong: if release 8 cannot compile against ModLauncher 9 APIs, the shared-services-file design in R7 collapses and both ML backends need separate discovery mechanisms - which is precisely what the spike is for.
 
 
 ## T5's `indices()` orders numerically rather than lexicographically. As written, a manifest with ten or more modules would order "10" before "2" and change which module wins a specificity tie. SP-1's own manifests stop at module.4 so no test would catch it, but SP-3 (Baritone, 13+ versions) would hit it immediately. Cost if wrong: none; numeric ordering is a strict superset of correct behaviour here.
 
 
-## T10's Step 7 creates no `Leak.java`. The step contradicts itself, and the reason it gives is sound: `rutter-api` cannot compile against Minecraft by construction, so a live violation is unconstructible. The negative case is the `buildSrc` suite, which compiles real fixtures against a stub `net.minecraft.Level`. Cost if wrong: the purity task's failure path is proven only at unit level, not end to end. Accepted - the inability to compile against Minecraft is itself a second layer of the same guarantee.
+## T10's Step 7 creates no `Leak.java`. The step contradicts itself, and the reason it gives is sound: `nylium-api` cannot compile against Minecraft by construction, so a live violation is unconstructible. The negative case is the `buildSrc` suite, which compiles real fixtures against a stub `net.minecraft.Level`. Cost if wrong: the purity task's failure path is proven only at unit level, not end to end. Accepted - the inability to compile against Minecraft is itself a second layer of the same guarantee.
 
 
 ## T11 implements the resource-reading `TestModEntry` from Step 8 directly and skips Step 7's system-property variant. A property would be identical across every module and would prove nothing about which module ran, which is the entire purpose of the marker. Cost if wrong: none; Step 8 was already the plan's own correction.
 
 
-## every server-provisioning task carries the same `onlyIf { project.hasProperty('rutterSmoke') }` gate as `:smoke:test`. Gating only `test` leaves its `dependsOn` provisioning to run regardless, so a plain `./gradlew build` would download several hundred megabytes of loader installers - directly contradicting T12 Step 8, which expects the offline build to stay offline. Cost if wrong: none.
+## every server-provisioning task carries the same `onlyIf { project.hasProperty('nyliumSmoke') }` gate as `:smoke:test`. Gating only `test` leaves its `dependsOn` provisioning to run regardless, so a plain `./gradlew build` would download several hundred megabytes of loader installers - directly contradicting T12 Step 8, which expects the offline build to stay offline. Cost if wrong: none.
 
 
-## T14 writes the services file listing the ModLauncher 8 service alone; T15 Step 4 extends it to both. T14 Step 4 states both positions and its second one is correct, since `RutterMl9Service` does not exist until T15 and `ServiceLoader` would fail on the missing class. Cost if wrong: none.
+## T14 writes the services file listing the ModLauncher 8 service alone; T15 Step 4 extends it to both. T14 Step 4 states both positions and its second one is correct, since `NyliumMl9Service` does not exist until T15 and `ServiceLoader` would fail on the missing class. Cost if wrong: none.
 
 
 ## the missing `(scope)` in Task 1's commit message is a real finding and the plan was wrong,
@@ -53,7 +53,7 @@ deferring to `initializeLaunch` and returning the GAME layer's loader. Chosen ov
 into two public calls because that would force every backend to change and would let a backend
 forget the second call silently. Affects Tasks 3, 9, 11 and 15, all still unimplemented, so the
 briefs are amended at dispatch and there is no rework. Cost if wrong: a `Runnable` cannot return a
-value or a typed failure to the platform; the kernel's `invoke` throws `RutterException`, which
+value or a typed failure to the platform; the kernel's `invoke` throws `NyliumException`, which
 propagates inline on three backends and at `initializeLaunch` on ML9. If a platform later needs to
 abort the launch with its own error type, this needs a functional interface instead.
 
@@ -177,7 +177,7 @@ guarantee rather than an incidental one.
 silent-failure defect for ten tasks risks it being triaged away, and SP-3's Baritone manifests will
 be authored against this format. Reopening the original implementer is right because it owns the
 file and its context is intact. Cost if wrong: strict unknown-key rejection could break forward
-compatibility if a newer Rutter added a field and an older kernel read the manifest. Judged not a
+compatibility if a newer Nylium added a field and an older kernel read the manifest. Judged not a
 real risk here, because SP-2's plugin generates the manifest and the kernel into the same jar, so
 manifest/kernel version skew is close to impossible.
 
@@ -238,7 +238,7 @@ listing). Cost if wrong: none.
 
 ## harden `fileName()` to split on either separator and reject an empty, `.` or `..` basename,
 but explicitly NOT treat this as a security fix. Reaching it needs a jar whose entry name contains
-backslashes, and anyone who can deliver that jar can simply put arbitrary code in the module Rutter
+backslashes, and anyone who can deliver that jar can simply put arbitrary code in the module Nylium
 is about to load and run. It is also unreachable from a hand-written manifest, since `extract()`
 calls `read()` first and an unmatched path fails there long before `fileName()`. So: robustness,
 worth two lines now rather than a confused bug report later. No test required for the backslash case;
@@ -310,7 +310,7 @@ Cost if wrong: one line of text.
 
 
 ## the unparseable-branch message asymmetry is fixed rather than deferred, despite being a
-plan-mandated Minor, because of which path it is. "Probe threw" is rare; "found a version Rutter
+plan-mandated Minor, because of which path it is. "Probe threw" is rare; "found a version Nylium
 cannot read" is the likely real-world case, since it is what a snapshot produces. `McVersion.parse`
 already generates exactly the sentence the user needs (release versions only, not snapshots or
 pre-releases) and the chain was discarding it, so the one message shown when the game will not start
@@ -349,7 +349,7 @@ value passes the check; acceptable given how contrived that shape is.
 
 
 ## class-level visibility gating is fixed despite being currently unreachable. The reviewer's
-argument is the one I would have made myself: `rutter-api` cannot compile against Minecraft at all,
+argument is the one I would have made myself: `nylium-api` cannot compile against Minecraft at all,
 but if that were sufficient reasoning it would equally excuse not writing the scanner. Gating class
 checks on the same predicate the members use makes the semantics consistent and the scanner reusable
 for SP-4 and SP-5, which will add API modules that may sit on a Minecraft-adjacent classpath. Cost if
@@ -464,10 +464,10 @@ in 1.7.10-1.21.11 suggests that.
 
 ## gate the dependency EDGE at configuration time, not the tasks. My original amendment fixed
 the symptom rather than the shape: `onlyIf` gates an action and never an edge, which is why the same
-gap reappeared one level down at `dependsOn ':rutter-testmod:universalJar'`. Wrapping the
-`dependsOn` in `if (project.hasProperty('rutterSmoke'))` removes the edge entirely when smoke is off,
+gap reappeared one level down at `dependsOn ':nylium-testmod:universalJar'`. Wrapping the
+`dependsOn` in `if (project.hasProperty('nyliumSmoke'))` removes the edge entirely when smoke is off,
 so nothing downstream is dragged in. Explicitly refused to put `onlyIf` on `universalJar` itself,
-which would make an explicitly requested `./gradlew :rutter-testmod:universalJar` silently skip -
+which would make an explicitly requested `./gradlew :nylium-testmod:universalJar` silently skip -
 worse than the cost being fixed. Cost if wrong: none identified.
 
 
@@ -477,7 +477,7 @@ mine:
   1. `./gradlew build --offline` now contains ONLY `:smoke:test SKIPPED` - no provisionFabricServers,
      no universalJar, no moduleJar*, no generateModuleId*. Absent from the graph entirely, not
      merely skipped, which is what gating the edge rather than the actions buys.
-  2. Deleted both marker files, then ran `:smoke:test -PrutterSmoke --rerun-tasks` forcing full
+  2. Deleted both marker files, then ran `:smoke:test -PnyliumSmoke --rerun-tasks` forcing full
      re-execution: BUILD SUCCESSFUL in 12s, both markers freshly written as [module=1.21.10] and
      [module=1.21.11]. Deleting first mattered - it is the same trap I fell into at Task 11 with a
      mistyped path, where a leftover file would have produced a reassuring result that proved
@@ -493,7 +493,7 @@ observable. Required both halves: a confirmation line naming the selected module
 JVM shutdown hook warning if boot never happened. The shutdown hook fires too late to save the
 session, which is exactly the point - it converts an unexplainable "the mod did nothing" report into
 a one-line answer. Directed `System.out`/`System.err` rather than a logging framework, since
-`rutter-core` carries zero dependencies by design and a stage-zero bootstrap depending on the host's
+`nylium-core` carries zero dependencies by design and a stage-zero bootstrap depending on the host's
 logging setup is the fragility this project keeps avoiding. Cost if wrong: two printed lines.
 
 
@@ -553,7 +553,7 @@ instances and the hook fires before the second exists.
 other precisely BECAUSE visibility is unresolved: when someone debugs a module that loads but cannot
 see game classes, the first fact they need is that dispatch itself succeeded. Reviewer also
 confirmed the failure paths are already sound (no exception table around `onLoad`, so a thrown
-`RutterException` crashes the bootstrap loudly rather than being swallowed).
+`NyliumException` crashes the bootstrap loudly rather than being swallowed).
 
 
 ## overrode the implementer's rationale on the duplication finding and sided with the reviewer.
