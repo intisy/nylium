@@ -7,7 +7,7 @@ import io.github.intisy.rutter.core.VersionRange;
 import org.gradle.api.Action;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.NamedDomainObjectContainer;
-import org.gradle.api.Project;
+import org.gradle.api.model.ObjectFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -20,7 +20,6 @@ public class RutterExtension {
 
     private static final Pattern MOD_ID = Pattern.compile("^[a-z][a-z0-9-_]{1,63}$");
 
-    private final Project project;
     private final ModSpec mod;
     private final NamedDomainObjectContainer<ModuleSpec> modules;
 
@@ -33,10 +32,9 @@ public class RutterExtension {
      */
     private final List<String> moduleOrder = new ArrayList<String>();
 
-    public RutterExtension(Project project) {
-        this.project = project;
-        this.mod = project.getObjects().newInstance(ModSpec.class);
-        this.modules = project.getObjects().domainObjectContainer(ModuleSpec.class);
+    public RutterExtension(ObjectFactory objects) {
+        this.mod = objects.newInstance(ModSpec.class);
+        this.modules = objects.domainObjectContainer(ModuleSpec.class);
         this.modules.whenObjectAdded(spec -> moduleOrder.add(spec.getName()));
     }
 
@@ -54,10 +52,6 @@ public class RutterExtension {
 
     public NamedDomainObjectContainer<ModuleSpec> getModules() {
         return modules;
-    }
-
-    Project project() {
-        return project;
     }
 
     String modulePrefix() {

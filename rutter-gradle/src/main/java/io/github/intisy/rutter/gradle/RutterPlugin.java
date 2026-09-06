@@ -9,7 +9,7 @@ import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.file.ArchiveOperations;
 import org.gradle.api.file.DuplicatesStrategy;
-import org.gradle.api.provider.Provider;
+import org.gradle.api.plugins.BasePlugin;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.jvm.tasks.Jar;
 
@@ -30,6 +30,8 @@ import java.util.Set;
 
 public class RutterPlugin implements Plugin<Project> {
 
+    private static final String TASK_GROUP = "rutter";
+
     private final ArchiveOperations archiveOperations;
 
     /**
@@ -42,86 +44,134 @@ public class RutterPlugin implements Plugin<Project> {
         this.archiveOperations = archiveOperations;
     }
 
+    /**
+     * @implNote {@code rutterUniversalJar} and {@code rutterVerifyModules} are registered here
+     *     rather than from {@code afterEvaluate}, so a consumer can reach them with
+     *     {@code tasks.named(...)} from its own script body. Their configuration actions run at
+     *     task realization, which is always later than {@code afterEvaluate}, so calling
+     *     {@link RutterExtension#resolve()} from inside one still sees the complete declaration.
+     *     Which text writers exist is a function of the declared platform union, so registering
+     *     those stays in {@code afterEvaluate}.
+     */
     @Override
     public void apply(Project project) {
-        final RutterExtension rutter =
-                project.getExtensions().create("rutter", RutterExtension.class, project);
+        project.getPluginManager().apply(BasePlugin.class);
 
-        final TaskProvider<Task> metadata = project.getTasks().register("rutterMetadata", task ->
-                task.setDescription("Generates the Rutter manifest and loader metadata."));
+        final RutterExtension rutter = project.getExtensions()
+                .create("rutter", RutterExtension.class, project.getObjects());
+        final List<GeneratedFile> generated = new ArrayList<GeneratedFile>();
+        final Configuration embed = embedConfiguration(project);
+
+        final TaskProvider<Task> metadata = project.getTasks().register("rutterMetadata", task -> {
+            task.setGroup(TASK_GROUP);
+            task.setDescription("Generates the Rutter manifest and loader metadata.");
+            if (rutter.getModules().isEmpty()) {
+                failWhenInvokedWithNoModules(task);
+            }
+        });
+
+        final TaskProvider<RutterVerifyModulesTask> verify = project.getTasks().register(
+                "rutterVerifyModules", RutterVerifyModulesTask.class, task -> {
+            task.setGroup(TASK_GROUP);
+            task.setDescription("Rejects module jars that cannot work at runtime.");
+            task.getStamp().set(project.getLayout().getBuildDirectory()
+                    .file("rutter-internal/rutterVerifyModules.stamp"));
+            if (rutter.getModules().isEmpty()) {
+                failWhenInvokedWithNoModules(task);
+                return;
+            }
+            for (ResolvedModule module : rutter.resolve()) {
+                task.getModules().add(moduleToVerify(project, module));
+            }
+        });
+
+        final TaskProvider<Jar> universalJar = project.getTasks().register(
+                "rutterUniversalJar", Jar.class, jar -> {
+            jar.setGroup(TASK_GROUP);
+            jar.setDescription("Assembles the Rutter universal jar.");
+            jar.getArchiveClassifier().set("universal");
+            // FAIL surfaces a colliding entry instead of silently keeping one, per SP-1's lesson.
+            jar.setDuplicatesStrategy(DuplicatesStrategy.FAIL);
+            jar.dependsOn(verify);
+            if (rutter.getModules().isEmpty()) {
+                failWhenInvokedWithNoModules(jar);
+                return;
+            }
+            List<ResolvedModule> modules = rutter.resolve();
+            embedInto(jar, project, embed);
+            for (GeneratedFile file : generated) {
+                jar.from(file.destination(), copy -> copy.into(file.parentDirectory()));
+            }
+            for (ResolvedModule module : modules) {
+                addModuleJar(jar, module);
+            }
+            if (platformUnion(modules).contains(PlatformId.LAUNCHWRAPPER)) {
+                jar.getManifest().getAttributes().put("TweakClass",
+                        "io.github.intisy.rutter.bootstrap.launchwrapper.RutterTweaker");
+            }
+        });
+
+        project.getTasks().named(BasePlugin.ASSEMBLE_TASK_NAME)
+                .configure(assemble -> assemble.dependsOn(universalJar));
 
         project.afterEvaluate(evaluated -> {
             if (rutter.getModules().isEmpty()) {
-                failWhenInvokedWithNoModules(metadata);
                 return;
             }
-
             List<ResolvedModule> modules = rutter.resolve();
             Set<PlatformId> platforms = platformUnion(modules);
-
-            List<TaskProvider<RutterTextFileTask>> writers =
-                    new ArrayList<TaskProvider<RutterTextFileTask>>();
-            writers.add(writer(evaluated, "rutterManifest", ModuleManifest.RESOURCE,
-                    ManifestRenderer.render(modules)));
-            if (platforms.contains(PlatformId.FABRIC)) {
-                writers.add(writer(evaluated, "rutterFabricModJson", "fabric.mod.json",
-                        FabricMetadataRenderer.render(rutter.getMod())));
-            }
-            String services = ServiceRenderer.transformationServices(platforms);
-            if (services != null) {
-                writers.add(writer(evaluated, "rutterTransformationServices",
-                        "META-INF/services/cpw.mods.modlauncher.api.ITransformationService",
-                        services));
-            }
-            String launchPlugins = ServiceRenderer.launchPlugins(platforms);
-            if (launchPlugins != null) {
-                writers.add(writer(evaluated, "rutterLaunchPlugins",
-                        "META-INF/services/cpw.mods.modlauncher.serviceapi.ILaunchPluginService",
-                        launchPlugins));
-            }
-            metadata.configure(task -> task.dependsOn(writers));
-
-            final TaskProvider<RutterVerifyModulesTask> verify =
-                    verifyModulesTask(evaluated, modules);
-
-            final Configuration embed = embedConfiguration(evaluated, platforms);
-            final boolean launchWrapper = platforms.contains(PlatformId.LAUNCHWRAPPER);
-
-            evaluated.getTasks().register("rutterUniversalJar", Jar.class, jar -> {
-                jar.setDescription("Assembles the Rutter universal jar.");
-                jar.getArchiveClassifier().set("universal");
-                // FAIL surfaces a colliding entry instead of silently keeping one, per SP-1's lesson.
-                jar.setDuplicatesStrategy(DuplicatesStrategy.FAIL);
-                jar.dependsOn(metadata);
-                jar.dependsOn(verify);
-
-                final ArchiveOperations archives = archiveOperations;
-                jar.from(evaluated.provider(() -> {
-                    List<Object> trees = new ArrayList<Object>();
-                    for (File artifact : embed.getFiles()) {
-                        trees.add(archives.zipTree(artifact));
-                    }
-                    return trees;
-                }), copy -> copy.exclude("META-INF/MANIFEST.MF", "META-INF/*.SF",
-                        "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/maven/**",
-                        "module-info.class"));
-
-                jar.from(evaluated.getLayout().getBuildDirectory().dir("rutter"));
-
-                for (ResolvedModule module : modules) {
-                    final String path = module.path();
-                    jar.from(module.jar(), copy -> {
-                        copy.into(path.substring(0, path.lastIndexOf('/')));
-                        copy.rename(".*", path.substring(path.lastIndexOf('/') + 1));
-                    });
-                }
-
-                if (launchWrapper) {
-                    jar.getManifest().getAttributes().put("TweakClass",
-                            "io.github.intisy.rutter.bootstrap.launchwrapper.RutterTweaker");
+            addEmbedDependencies(evaluated, embed, platforms);
+            generated.addAll(writers(evaluated, rutter, modules, platforms));
+            metadata.configure(task -> {
+                for (GeneratedFile file : generated) {
+                    task.dependsOn(file.writer());
                 }
             });
         });
+    }
+
+    private static List<GeneratedFile> writers(Project project, RutterExtension rutter,
+                                               List<ResolvedModule> modules,
+                                               Set<PlatformId> platforms) {
+        List<GeneratedFile> generated = new ArrayList<GeneratedFile>();
+        generated.add(writer(project, "rutterManifest", ModuleManifest.RESOURCE,
+                ManifestRenderer.render(modules)));
+        if (platforms.contains(PlatformId.FABRIC)) {
+            generated.add(writer(project, "rutterFabricModJson", "fabric.mod.json",
+                    FabricMetadataRenderer.render(rutter.getMod())));
+        }
+        String services = ServiceRenderer.transformationServices(platforms);
+        if (services != null) {
+            generated.add(writer(project, "rutterTransformationServices",
+                    "META-INF/services/cpw.mods.modlauncher.api.ITransformationService", services));
+        }
+        String launchPlugins = ServiceRenderer.launchPlugins(platforms);
+        if (launchPlugins != null) {
+            generated.add(writer(project, "rutterLaunchPlugins",
+                    "META-INF/services/cpw.mods.modlauncher.serviceapi.ILaunchPluginService",
+                    launchPlugins));
+        }
+        return generated;
+    }
+
+    private static void addModuleJar(Jar jar, ResolvedModule module) {
+        final String path = module.path();
+        jar.from(module.jar(), copy -> {
+            copy.into(path.substring(0, path.lastIndexOf('/')));
+            copy.rename(".*", path.substring(path.lastIndexOf('/') + 1));
+        });
+    }
+
+    private void embedInto(Jar jar, Project project, Configuration embed) {
+        final ArchiveOperations archives = archiveOperations;
+        jar.from(project.provider(() -> {
+            List<Object> trees = new ArrayList<Object>();
+            for (File artifact : embed.getFiles()) {
+                trees.add(archives.zipTree(artifact));
+            }
+            return trees;
+        }), copy -> copy.exclude("META-INF/MANIFEST.MF", "META-INF/*.SF", "META-INF/*.DSA",
+                "META-INF/*.RSA", "META-INF/maven/**", "module-info.class"));
     }
 
     private static final Map<PlatformId, String> BOOTSTRAPS = bootstraps();
@@ -135,28 +185,25 @@ public class RutterPlugin implements Plugin<Project> {
         return map;
     }
 
-    private static TaskProvider<RutterVerifyModulesTask> verifyModulesTask(
-            Project project, List<ResolvedModule> modules) {
-        return project.getTasks().register("rutterVerifyModules", RutterVerifyModulesTask.class,
-                task -> {
-                    task.setDescription("Rejects module jars that cannot work at runtime.");
-                    for (ResolvedModule module : modules) {
-                        RutterVerifyModulesTask.ModuleToVerify entry = project.getObjects()
-                                .newInstance(RutterVerifyModulesTask.ModuleToVerify.class);
-                        entry.getModuleName().set(module.name());
-                        entry.getMixins().set(module.mixins());
-                        entry.getJar().set(module.jar());
-                        task.getModules().add(entry);
-                    }
-                    task.getStamp().set(project.getLayout().getBuildDirectory()
-                            .file("rutter-internal/rutterVerifyModules.stamp"));
-                });
+    private static RutterVerifyModulesTask.ModuleToVerify moduleToVerify(Project project,
+                                                                        ResolvedModule module) {
+        RutterVerifyModulesTask.ModuleToVerify entry = project.getObjects()
+                .newInstance(RutterVerifyModulesTask.ModuleToVerify.class);
+        entry.getModuleName().set(module.name());
+        entry.getMixins().set(module.mixins());
+        entry.getJar().set(module.jar());
+        return entry;
     }
 
-    private static Configuration embedConfiguration(Project project, Set<PlatformId> platforms) {
+    private static Configuration embedConfiguration(Project project) {
         Configuration embed = project.getConfigurations().maybeCreate("rutterEmbed");
         embed.setCanBeConsumed(false);
         embed.setCanBeResolved(true);
+        return embed;
+    }
+
+    private static void addEmbedDependencies(Project project, Configuration embed,
+                                             Set<PlatformId> platforms) {
         String version = pluginVersion();
         addEmbed(project, embed, "rutter-api", version);
         addEmbed(project, embed, "rutter-core", version);
@@ -168,7 +215,6 @@ public class RutterPlugin implements Plugin<Project> {
             }
             addEmbed(project, embed, artifact, version);
         }
-        return embed;
     }
 
     private static void addEmbed(Project project, Configuration embed, String artifact,
@@ -199,16 +245,16 @@ public class RutterPlugin implements Plugin<Project> {
     }
 
     /**
-     * @implNote {@code afterEvaluate} runs for every task invocation, including plain
-     *     introspection such as {@code tasks} or {@code help}, so an unconfigured project (no
-     *     {@code module(...)} declared yet) must not fail here; only invoking
-     *     {@code rutterMetadata} itself should fail, with an actionable message.
+     * @implNote The plugin is applied before the {@code rutter { }} block is read, and plain
+     *     introspection such as {@code tasks} realizes every task, so an unconfigured project must
+     *     not fail while a task is being configured; only invoking one of Rutter's own tasks
+     *     should fail, with an actionable message.
      */
-    private static void failWhenInvokedWithNoModules(TaskProvider<Task> metadata) {
-        metadata.configure(task -> task.doFirst(ignored -> {
+    private static void failWhenInvokedWithNoModules(Task task) {
+        task.doFirst(ignored -> {
             throw new InvalidUserDataException("Rutter is applied but declares no modules. Add at"
                     + " least one rutter { module('...') { } } block.");
-        }));
+        });
     }
 
     static Set<PlatformId> platformUnion(List<ResolvedModule> modules) {
@@ -219,20 +265,15 @@ public class RutterPlugin implements Plugin<Project> {
         return platforms;
     }
 
-    /**
-     * @implNote Everything written under {@code build/rutter/} becomes universal jar content:
-     *     {@code rutterUniversalJar} embeds that whole directory (see the {@code jar.from} call
-     *     above). Internal task state that must not be shipped, such as
-     *     {@code RutterVerifyModulesTask}'s stamp, belongs under {@code build/rutter-internal/}
-     *     instead.
-     */
-    private static TaskProvider<RutterTextFileTask> writer(Project project, String taskName,
-                                                           String relativePath, String content) {
-        Provider<String> body = project.provider(() -> content);
-        return project.getTasks().register(taskName, RutterTextFileTask.class, task -> {
-            task.getContent().set(body);
-            task.getDestination().set(
-                    project.getLayout().getBuildDirectory().file("rutter/" + relativePath));
-        });
+    private static GeneratedFile writer(Project project, String taskName, String relativePath,
+                                        String content) {
+        TaskProvider<RutterTextFileTask> writer = project.getTasks()
+                .register(taskName, RutterTextFileTask.class, task -> {
+                    task.setGroup(TASK_GROUP);
+                    task.getContent().set(content);
+                    task.getDestination().set(
+                            project.getLayout().getBuildDirectory().file("rutter/" + relativePath));
+                });
+        return new GeneratedFile(relativePath, writer);
     }
 }
