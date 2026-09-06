@@ -40,7 +40,9 @@ plugin id `io.github.intisy.rutter`.
   and old consumer builds can apply it. The ModLauncher `ServiceLoader` reason does not apply to a
   plugin, but consistency costs nothing.
 - Gradle 7.6 floor. Lazy task configuration, the Provider API and `layout.buildDirectory` are all
-  present there, and nothing newer is needed.
+  present there, and nothing newer is needed. **Superseded as built:** every TestKit run uses this
+  repository's own wrapper, so 7.6 is never exercised and 8.x is the tested floor. `CONTENT.md`
+  documents 8.x.
 - `gradleApi()` is `compileOnly`. `rutter-core` is a real dependency, because validation reuses the
   kernel's own parsers.
 

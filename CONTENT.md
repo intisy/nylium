@@ -135,7 +135,8 @@ this repository ships, and nothing older has been exercised.
 
 ### Tasks
 
-All five tasks sit in the `rutter` group, so plain `./gradlew tasks` lists them.
+Every task the plugin registers sits in the `rutter` group, so plain `./gradlew tasks` lists
+them. A full declaration registers seven.
 
 | Task | Does |
 | --- | --- |
@@ -275,8 +276,8 @@ Rejected while the build is being configured, before any task runs:
   game would reject cannot pass the build either.
 - An unknown platform name is rejected, naming the platforms it does know about.
 - `NEOFORGE` is rejected outright, as above.
-- A duplicate module name, an empty `rutter { }` block, and a module with no declared platforms
-  are all rejected with a specific message rather than silently accepted.
+- A duplicate module name and a module with no declared platforms are both rejected with a
+  specific message rather than silently accepted.
 - A module with no `jar` is rejected: there is nothing to embed.
 - A missing `mod { id }` is rejected. An id Fabric Loader would refuse is rejected too, but only
   when some module declares `FABRIC`, the same condition that generates the `fabric.mod.json` the
@@ -299,6 +300,11 @@ execution time:
   exactly one place.
 - A module jar carrying its own `rutter-modules.properties` is rejected: only the universal jar
   carries a manifest, and a module with one has shadowed Rutter in by accident.
+
+Applying the plugin with no `rutter { }` block at all is inert rather than rejected: `tasks`,
+`help`, `clean` and `build` all still succeed, and `assemble` is wired to the jar only once a
+declaration exists. Invoking one of Rutter's own tasks is what fails, and it fails when the task
+runs, telling you to declare a module.
 
 ## Known limitations
 
