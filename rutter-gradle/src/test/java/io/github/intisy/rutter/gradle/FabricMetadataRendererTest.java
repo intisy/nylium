@@ -47,6 +47,16 @@ class FabricMetadataRendererTest {
     }
 
     @Test
+    void includesTheFabricLoaderDependencyByDefault() {
+        Project project = ProjectBuilder.builder().build();
+        ModSpec mod = project.getObjects().newInstance(ModSpec.class);
+        mod.getId().set("rutter_testmod");
+        mod.getVersion().set("0.1.0");
+        assertEquals(">=0.14.0",
+                render(mod).getAsJsonObject("depends").get("fabricloader").getAsString());
+    }
+
+    @Test
     void honoursAnExplicitMinecraftDependency() {
         ModSpec mod = spec();
         mod.getMinecraftDependency().set(">=1.16.5");
@@ -59,6 +69,14 @@ class FabricMetadataRendererTest {
         ModSpec mod = spec();
         mod.getDescription().set("A \"quoted\" mod");
         assertEquals("A \"quoted\" mod", render(mod).get("description").getAsString());
+    }
+
+    @Test
+    void preservesBackslashesAndNewlinesThroughAGsonRoundTrip() {
+        ModSpec mod = spec();
+        String value = "back\\slash\nnewline";
+        mod.getDescription().set(value);
+        assertEquals(value, render(mod).get("description").getAsString());
     }
 
     @Test
