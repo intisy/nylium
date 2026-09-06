@@ -5,7 +5,9 @@ import io.github.intisy.rutter.api.RutterException;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -49,13 +51,17 @@ public final class ModuleExtractor {
     }
 
     private static String fileName(ModuleDescriptor module, byte[] bytes) {
-        String base = module.path();
-        int slash = base.lastIndexOf('/');
-        if (slash >= 0) {
-            base = base.substring(slash + 1);
-        }
+        String path = module.path();
+        int slashForward = path.lastIndexOf('/');
+        int slashBackward = path.lastIndexOf('\\');
+        int slash = Math.max(slashForward, slashBackward);
+        String base = slash >= 0 ? path.substring(slash + 1) : path;
         if (base.endsWith(".jar")) {
-            base = base.substring(0, base.length() - ".jar".length());
+            base = base.substring(0, base.length() - 4);
+        }
+        if (base.isEmpty() || base.equals(".") || base.equals("..")) {
+            throw new RutterException("The Rutter manifest names module '" + path
+                    + "' with no usable filename (no name before extension or ends with separator).");
         }
         return base + "-" + sha256(bytes).substring(0, 16) + ".jar";
     }
@@ -74,6 +80,10 @@ public final class ModuleExtractor {
         }
     }
 
+    /**
+     * @implNote On Windows, a lost atomic-move race (another thread winning the extract) surfaces as
+     * AccessDeniedException rather than FileAlreadyExistsException; both are treated as race signals.
+     */
     private void write(byte[] bytes, Path target) {
         try {
             Files.createDirectories(cacheDirectory);
@@ -82,7 +92,7 @@ public final class ModuleExtractor {
                 Files.write(temporary, bytes);
                 try {
                     Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
-                } catch (AtomicMoveNotSupportedException | java.nio.file.FileAlreadyExistsException | java.nio.file.AccessDeniedException e) {
+                } catch (AtomicMoveNotSupportedException | FileAlreadyExistsException | AccessDeniedException e) {
                     if (Files.isRegularFile(target)) {
                         Files.deleteIfExists(temporary);
                     } else {
@@ -90,7 +100,10 @@ public final class ModuleExtractor {
                     }
                 }
             } finally {
-                Files.deleteIfExists(temporary);
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException ignored) {
+                }
             }
         } catch (IOException e) {
             throw new RutterException("Could not write module to the Rutter cache at " + target, e);

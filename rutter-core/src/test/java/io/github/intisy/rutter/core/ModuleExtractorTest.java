@@ -126,4 +126,16 @@ class ModuleExtractorTest {
             assertTrue(thrown.getMessage().contains("modules/absent.jar"), thrown.getMessage());
         }
     }
+
+    @Test
+    void aModulePathWithNoBasenameFailsClearly(@TempDir Path dir) throws Exception {
+        byte[] payload = tinyJar();
+        try (URLClassLoader loader = (URLClassLoader) outerJarContaining(dir, "modules/", payload)) {
+            ModuleExtractor extractor = new ModuleExtractor(dir.resolve("cache"));
+
+            RutterException thrown = assertThrows(RutterException.class,
+                    () -> extractor.extract(loader, descriptor("modules/")));
+            assertTrue(thrown.getMessage().contains("modules/"), thrown.getMessage());
+        }
+    }
 }
