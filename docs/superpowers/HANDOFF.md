@@ -117,6 +117,45 @@ before writing code against any API the plan names:
   `development` carries `CONTENT.md` plus `.github/docs-config.yml` as the generator's input.
 - The smoke matrix is a `workflow_dispatch`-only CI caller by design, not a per-push gate: it
   provisions four Minecraft servers. `.github/workflows/smoke.yml`.
+- **Retire `rutter-testmod`'s hand-rolled `universalJar`?** The plugin reproduces it byte for byte,
+  so it could. But it is the acceptance gate's reference artifact: replace it and the differential
+  compares the plugin against itself. Recommendation is to keep it until SP-3 gives a second real
+  consumer. Doing it in-repo also needs a dependency-substitution rule, since the plugin resolves
+  the six pieces as Maven coordinates.
+
+## Traps that will bite a fresh session
+
+Each of these produced a green result that meant nothing, or nearly did.
+
+- **A smoke run can pass without launching anything.** With unchanged inputs `:smoke:test` reports
+  `UP-TO-DATE`, so `BUILD SUCCESSFUL` proves nothing: no server starts and no marker is written.
+  Always `--rerun-tasks`, delete the markers first, and read them afterwards.
+- **The markers cannot tell you which jar booted.** The harness renames any `-PrutterSmokeJar`
+  override to `rutter-testmod-universal.jar`. Discriminate by file size: `stat` the installed jar in
+  each server directory against the jar you meant to test.
+- **`:rutter-gradle:test` is never up to date, deliberately.** `rutter-testmod`'s hand-rolled block
+  still emits its manifest through `resources.text.fromString`, so the reference jar is not
+  reproducible between runs. A gate that always runs beats one that can silently skip. Do not
+  "fix" it by touching that block.
+- **An empty `grep -c` result looks exactly like a missing thing**, and a bare `grep -c failure` on
+  a JUnit XML matches the `failures="0"` attribute. Read the context, not the count.
+- **`grep -c` returning 0 exits non-zero** and will break a `&&` chain, skipping the command you
+  actually cared about.
+
+## SP-2 items deliberately left undone
+
+All recorded with reasoning in the rulings file; none is a defect.
+
+- `RutterPlugin` carries five concerns at around 240 lines. The natural split is a `RutterEmbed`
+  class and a `UniversalJar` factory. Worth doing when the file is next touched, not as a gate.
+- `mod.version` falls back to `"0.0.0"` rather than `project.version`. An explicit visible default
+  is defensible; changing it is a behaviour change, not a fix.
+- `rutterEmbed` declares no attributes and non-strict versions. Not reachable from a normal consumer
+  build, but an `allprojects` `resolutionStrategy.force` on `io.github.intisy.rutter:*` could embed
+  a kernel the generated metadata was not written for.
+- The `f3e273e` commit subject is around 130 characters. Rewriting history is the owner's call.
+- **One measurement is single-version:** `tasks.withType(Jar) { }` was found *not* to realize on
+  Gradle 8.14.4. `tasks.getByName` does. If the plugin is ever tested on another Gradle, re-check.
 
 ## What comes next
 
