@@ -164,9 +164,13 @@ class RutterKernelTest {
 
     public static class RecordingEntrypoint {
         static int invocations = 0;
+        static java.util.List<String> callOrder;
 
         public static void rutterInit() {
             invocations++;
+            if (callOrder != null) {
+                callOrder.add("entrypoint");
+            }
         }
     }
 
@@ -188,14 +192,15 @@ class RutterKernelTest {
             jar.closeEntry();
         }
         FakePlatform platform = new FakePlatform(PlatformId.FABRIC, Environment.CLIENT, "1.21.11");
+        RecordingEntrypoint.callOrder = platform.callOrder;
 
         try (URLClassLoader source = new URLClassLoader(new URL[]{outer.toUri().toURL()},
                 getClass().getClassLoader())) {
             RutterKernel.boot(platform, source, dir.resolve("cache"));
 
             assertEquals(1, RecordingEntrypoint.invocations);
-            assertEquals("mixin:mixins.mod.json",
-                    platform.callOrder.get(platform.callOrder.size() - 1));
+            assertEquals(java.util.Arrays.asList("classpath", "mixin:mixins.mod.json", "entrypoint"),
+                    platform.callOrder);
         }
     }
 
@@ -238,6 +243,7 @@ class RutterKernelTest {
     @Test
     void defersEntrypointInvocationUntilThePlatformSaysTheModuleIsLoadable(@TempDir Path dir) throws Exception {
         RecordingEntrypoint.invocations = 0;
+        RecordingEntrypoint.callOrder = null;
         String manifest = "module.0.path=modules/mod-1.21.11.jar\n"
                 + "module.0.platforms=MODLAUNCHER_9\n"
                 + "module.0.minecraft=1.21.11\n"

@@ -5,13 +5,22 @@ dependencies {
 def moduleIds = ['1.21.11', '1.21.10', '1.16.5', '1.7.10']
 
 moduleIds.each { id ->
-    tasks.register("moduleJar${id.replace('.', '')}", Jar) {
+    def safeId = id.replace('.', '')
+    def idFile = layout.buildDirectory.file("generated/moduleId/${id}/rutter-testmod-id.txt")
+    def generateModuleId = tasks.register("generateModuleId${safeId}") {
+        outputs.file(idFile)
+        doLast {
+            def file = idFile.get().asFile
+            file.parentFile.mkdirs()
+            file.text = id
+        }
+    }
+    tasks.register("moduleJar${safeId}", Jar) {
         archiveFileName = "testmod-${id}.jar"
         destinationDirectory = layout.buildDirectory.dir('modules')
         from sourceSets.main.output
-        from(resources.text.fromString(id).asFile()) {
-            rename '.*', 'rutter-testmod-id.txt'
-        }
+        from(idFile)
+        dependsOn generateModuleId
     }
 }
 
