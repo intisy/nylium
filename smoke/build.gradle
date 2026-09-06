@@ -7,13 +7,21 @@ dependencies {
 def serversDir = layout.buildDirectory.dir('servers')
 
 /**
- * @implNote Minecraft 1.21.x needs Java 21; the ambient PATH "java" that runs this task's own
- * actions is whatever launched the Gradle daemon, not necessarily the project's toolchain, so the
- * pre-download launch below asks for the toolchain launcher explicitly rather than trusting PATH.
+ * @implNote The ambient PATH "java" that runs a Gradle task's own actions is whatever launched the
+ * Gradle daemon, not necessarily a version a spawned Minecraft server needs (1.21.x needs Java 21;
+ * older loaders need Java 8), so both provisioning and the smoke tests resolve a toolchain launcher
+ * per required version rather than trusting PATH or a test JVM's own java.home. Each call returns a
+ * lazy Provider; nothing here resolves an actual JDK until a task's action reads it.
  */
-def java21 = javaToolchains.launcherFor {
-    languageVersion = JavaLanguageVersion.of(21)
+def javaLauncherFor(int version) {
+    javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(version)
+    }
 }
+
+def java8 = javaLauncherFor(8)
+def java17 = javaLauncherFor(17)
+def java21 = javaLauncherFor(21)
 
 tasks.register('provisionFabricServers') {
     onlyIf { project.hasProperty('rutterSmoke') } // dependants' onlyIf does not gate a dependency's own execution
@@ -43,7 +51,10 @@ tasks.register('provisionFabricServers') {
 /**
  * @implNote The Fabric server launcher fetches the vanilla server jar on its first launch. Doing
  * that inside the timed smoke run would race the harness's timeout against a large download, so
- * provisioning launches the server once itself here and stops it once boot completes.
+ * provisioning launches the server once itself here and stops it once boot completes. Readiness is
+ * detected by matching the literal "Done (" in the server log, the standard Minecraft/Fabric ready
+ * message; this is a version-coupled assumption, so a provisioning timeout for a future Minecraft
+ * version should be debugged starting from this string, not treated as a network flake.
  */
 def predownloadServerJar(File dir, String mcVersion, String javaExecutable) {
     File librariesDir = new File(dir, 'libraries')
@@ -79,9 +90,27 @@ def predownloadServerJar(File dir, String mcVersion, String javaExecutable) {
     }
 }
 
+/**
+ * @implNote onlyIf gates a task's own action, never an edge; adding this dependsOn only under the
+ * same condition keeps an ungated build from ever putting provisionFabricServers, or its
+ * universalJar dependency, into the task graph at all.
+ */
+def gateProvisioningIntoSmokeTest() {
+    if (project.hasProperty('rutterSmoke')) {
+        tasks.named('test') {
+            dependsOn tasks.named('provisionFabricServers')
+        }
+    }
+}
+gateProvisioningIntoSmokeTest()
+
 tasks.named('test') {
     onlyIf { project.hasProperty('rutterSmoke') } // opt-in: downloads loader installers and launches servers
-    dependsOn tasks.named('provisionFabricServers')
     systemProperty 'rutter.smoke.servers', serversDir.get().asFile.absolutePath
     javaLauncher = java21
+    doFirst {
+        systemProperty 'rutter.smoke.java.8', java8.get().executablePath.asFile.absolutePath
+        systemProperty 'rutter.smoke.java.17', java17.get().executablePath.asFile.absolutePath
+        systemProperty 'rutter.smoke.java.21', java21.get().executablePath.asFile.absolutePath
+    }
 }
