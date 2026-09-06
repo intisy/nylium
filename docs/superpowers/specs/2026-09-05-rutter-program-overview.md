@@ -64,7 +64,7 @@ The 1.7-to-26.2 span is not thirty special cases. It is a handful of bootstrap f
 | Backend | Covers | Status |
 | --- | --- | --- |
 | LaunchWrapper | Forge 1.7 - 1.12 | SP-1 |
-| ModLauncher 8 | Forge 1.13 - 1.16 | SP-1 |
+| ModLauncher 8 | Forge 1.13 - 1.16 | SP-1, dispatch only (see below) |
 | ModLauncher 9+ | Forge 1.17+ | SP-1 |
 | Fabric | 1.14+, and Quilt | SP-1 |
 | NeoForge | 1.20.4+ | SP-1b |
@@ -79,6 +79,13 @@ than being assumed into the ModLauncher 9 backend.
 
 That correction is the clearest argument for the spike-first ordering: the assumption was load
 bearing, wrong, and would not have surfaced until a NeoForge smoke test failed late in SP-1.
+
+**ModLauncher 8 dispatches but cannot yet reach Minecraft classes. Recorded 2026-09-06.** That
+backend selects, classpaths and invokes the right module on a real Forge 1.16.5 server, but its
+`ITransformationService` is discovered by a class loader that is a *sibling* of the one hosting the
+game, and its hook fires before that loader is built at all. A consumer whose module needs to touch
+a Minecraft class, or mixin into one, therefore cannot ship on 1.13 to 1.16 through this backend
+yet; closing that needs its own spike. See the SP-1 design spec for the bytecode analysis.
 
 ## Sub-projects
 

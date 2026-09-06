@@ -111,8 +111,8 @@ across twenty versions. Fabric Loader itself falls through eight strategies.
 
 Order: the platform's native probe first, then generic probes shared by every backend.
 
-- `NativeProbe` - contributed by the backend (Fabric's `minecraft` mod container,
-  `FMLLoader` version info reflectively).
+- `NativeProbe` - contributed by the backend (Fabric's `minecraft` mod container; both
+  ModLauncher backends read `net.minecraftforge.versions.mcp.MCPVersion` reflectively).
 - `VersionJsonProbe` - reads `version.json` from the Minecraft jar or classpath.
 - `MarkerClassProbe` - a table mapping class presence to version bounds.
 
@@ -131,8 +131,10 @@ versions where its bytecode is compatible, and that is the primary lever a consu
 jar size.
 
 Selection is deterministic: filter by platform, environment and version, order by constraint
-specificity then declared priority, first match wins. Ambiguity resolves by priority and is
-warned about.
+specificity then declared priority, first match wins. Ambiguity resolves by priority, and then by
+manifest index order; nothing warns about it, because `rutter-core` carries no logging. What
+"constraint specificity" weighs is documented on `ModuleDescriptor.specificity()` so a consumer can
+predict which of two overlapping modules wins.
 
 A miss must produce a `NoCompatibleModuleException` naming the detected platform, version and
 environment, and listing every candidate with the reason it was rejected. The difference
@@ -149,7 +151,7 @@ the hash matches, and guards concurrent launches with an atomic rename.
 | Backend | Covers | Entry contract | `addToClasspath` | Mixin registration |
 | --- | --- | --- | --- | --- |
 | LaunchWrapper | Forge 1.7 - 1.12 | `ITweaker.injectIntoClassLoader` | `Launch.classLoader.addURL` | after `MixinBootstrap.init()` |
-| ModLauncher 8 | Forge 1.13 - 1.16 | `ITransformationService` via `ServiceLoader` | jars returned from the scanning phase | service init |
+| ModLauncher 8 | Forge 1.13 - 1.16 | `ITransformationService` via `ServiceLoader` | reflective `URLClassLoader.addURL` on the service class loader | `onLoad`, see the visibility caveat below |
 | ModLauncher 9+ | Forge 1.17+ | `ITransformationService` plus `SecureJar` into `Layer.GAME` | `beginScanning` resource list | `Mixins.addConfiguration`, entrypoint deferred to `initializeLaunch` |
 | Fabric | 1.14+, Quilt | `PreLaunchEntrypoint` | `FabricLauncherBase.getLauncher().addToClassPath` | `Mixins.addConfiguration` in preLaunch |
 
@@ -217,9 +219,11 @@ omits today.
 
 **Verification status of the ModLauncher 9+ range.** Forge 1.21.x is verified against a real server
 (1.21.11-61.1.5). Forge 1.17 - 1.20.x is source-compatible and confirmed to compile at release 8,
-but was never run, and its `initializeLaunch` carries only a two-argument form, so the backend
-resolves that method reflectively across both arities. That range is declared **unverified** rather
-than supported until someone runs it. Proving it would mean four more server installs for versions
+but was never run. Its `initializeLaunch` carries only the two-argument form, which is precisely
+the one `RutterMl9LaunchPlugin` overrides: no reflection and no arity probing is involved, and
+overriding that form alone is what makes one implementation cover the whole ModLauncher 9+ range,
+because 10.2.4 still invokes it after adding the one-argument form. That range is declared
+**unverified** rather than supported until someone runs it. Proving it would mean four more server installs for versions
 no consumer needs until SP-3 folds them in, which is not SP-1's job.
 
 Confirmed spike details the backend must copy: the working Maven coordinates are
@@ -227,8 +231,8 @@ Confirmed spike details the backend must copy: the working Maven coordinates are
 `cpw.mods:modlauncher` / `cpw.mods:securejarhandler`, which is what this spec's earlier drafts
 assumed), and compiling them at release 8 requires overriding
 `TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE` to 21 on `configurations.compileClasspath`, because
-ModLauncher 10.x publishes a Java 17 target attribute that Gradle's variant resolution otherwise
-refuses. `Layer.GAME` is the transforming loader and the only layer that works: `PLUGIN` is not
+ModLauncher 10.x publishes `org.gradle.jvm.version = 16`, which Gradle's variant resolution
+otherwise refuses against a release-8 compile classpath. `Layer.GAME` is the transforming loader and the only layer that works: `PLUGIN` is not
 transforming, and `BOOT` and `SERVICE` silently drop the jar.
 
 **All four bootstraps coexist inside one outer jar.** Each must therefore be inert when its
