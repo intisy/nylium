@@ -1,0 +1,120 @@
+# READ FIRST: Rutter handoff
+
+**Written 2026-09-06.** SP-1 (the kernel) is complete. This file is the entry point for any new
+session. Everything below is verifiable from the repo; nothing depends on a prior conversation.
+
+## Where things are
+
+- Repo: `F:\Documents\GitHub\intisy\minecraft\mods\Rutter`
+- Branch: `development`, 55 commits ahead of `master`. **No git remote configured.**
+- `master` holds only the initial spec and plan commits.
+- Build: `./gradlew build --offline` is green. Smoke matrix: `./gradlew :smoke:test -PrutterSmoke`.
+
+## Read these, in this order
+
+1. `docs/superpowers/specs/2026-09-05-rutter-program-overview.md` - what Rutter is, the founding
+   compatibility contract, the five sub-projects and their order.
+2. `docs/superpowers/specs/2026-09-05-rutter-kernel-design.md` - SP-1's design, amended repeatedly
+   during execution. **The three known limitations are recorded here with bytecode evidence.**
+3. `docs/superpowers/plans/SPIKE-modlauncher9.md` - the ModLauncher 9 spike findings. Implement from
+   this, never from memory; it corrected several wrong assumptions.
+4. `docs/superpowers/plans/2026-09-05-rutter-kernel-rulings.md` - all 72 decisions taken during
+   execution without pausing, each with reasoning and what it costs if wrong. Read this if you want
+   to rework something.
+5. `docs/superpowers/plans/2026-09-05-rutter-kernel.md` - the executed plan. **Its code samples are
+   unreliable**: several APIs it names do not exist. See "Plan defects" below.
+
+## What is proven, and how
+
+One universal jar, four loader families, five real Minecraft servers. Verified by marker files
+written on disk by the dispatched module's own entrypoint, re-checked after deleting them and
+forcing a full re-run:
+
+| Server | Marker |
+| --- | --- |
+| Fabric 1.21.10 | `module=1.21.10` |
+| Fabric 1.21.11 | `module=1.21.11` |
+| Forge 1.7.10 (LaunchWrapper) | `module=1.7.10` |
+| Forge 1.16.5 (ModLauncher 8) | `module=1.16.5` |
+| Forge 1.21.11 (ModLauncher 9+) | `module=1.21.11-ml9` and `mixin=applied` |
+
+The Fabric pair is the load-bearing case: the same jar selecting a *different* module per version is
+what proves dispatch rather than mere loading. `mixin=applied` comes from a real
+`@Mixin(targets="net.minecraft.server.Main")` whose injected callback ran.
+
+## Three known limitations, each needing its own spike
+
+All three are documented in the design spec with the bytecode analysis behind them. None is a
+silent bug; all are stated in `CONTENT.md` (the README source) too.
+
+1. **ModLauncher 8 dispatches but cannot reach Minecraft classes.** Its `ITransformationService` is
+   discovered by a classloader that is a *sibling* of the one hosting the game, and its hook fires
+   before that loader is constructed. A consumer needing live game-class access or working mixins
+   cannot ship on Forge 1.13-1.16 through this backend. Candidate route:
+   `additionalClassesLocator()`/`additionalResourcesLocator()` plus a companion
+   `ILaunchPluginService`. **A fix cannot be verified until a test module exists that actually
+   touches a game class** - the current marker-writing module passes either way.
+2. **ModLauncher 9+ modules cannot be installed by dropping a jar in `mods/`.** Launch plugins are
+   enumerated from the boot layer inside `Launcher.<init>`, before Forge's mod-directory scan, and
+   `ILaunchPluginService` is never a `mods/` discovery trigger. Deployment gap, not correctness.
+   Candidate route: piggyback Forge's own mixin launch plugin via a `mods.toml` declaration or a
+   `MixinConfigs` manifest attribute, which is how ordinary Forge mods do it.
+3. **`Platform.environment()` cannot detect CLIENT on either ModLauncher backend.** Same classloader
+   topology as (1). `IEnvironment.Keys.LAUNCHTARGET` is the right signal but is measured empty at
+   `onLoad`, only populating at `initialize`/`beginScanning`. Fixing it needs kernel boot moved to a
+   later hook on two proven backends. CLIENT is unverified on *all* backends; no client smoke test
+   exists anywhere.
+
+## Plan defects, so you do not repeat them
+
+The executed plan asserted several APIs from memory that do not exist. Verify against the real jar
+before writing code against any API the plan names:
+
+- `cpw.mods:securejarhandler` is now `net.minecraftforge:securemodules`; `cpw.mods:modlauncher`
+  is now `net.minecraftforge:modlauncher` for ModLauncher 9+.
+- ModLauncher 8's `ITransformationService` has **no** `getExtraJarPaths()` and no jar-injection hook
+  at all. The working route is a reflective `addURL` on its discovery `URLClassLoader`.
+- `net.minecraft:launchwrapper:of-2.3` does not resolve; use `1.12`.
+- The plan's `MarkerClassProbe` table had a **backwards** entry (`net.minecraft.block.Blocks` mapped
+  to 1.9; the 1.13 flattening means that class is 1.13-and-later). It was deleted.
+
+## Non-obvious invariants, all enforced
+
+- **Every artifact emits Java 8 bytecode.** Both ModLauncher services share one
+  `META-INF/services` file and `ServiceLoader` instantiates every entry, so a Java 17 class file
+  there throws `UnsupportedClassVersionError` and kills a ModLauncher 8 game. Enforced by
+  `checkClassFileVersion`, wired into `check` for all eight subprojects. No `List.of`, no `var`,
+  no records anywhere.
+- **`rutter-api` exposes no `net.minecraft` type**, enforced by `checkApiPurity` (ASM scan covering
+  supertypes, interfaces, fields, methods, generics, throws, and annotations including parameter
+  annotations). This is what makes the founding compatibility contract enforceable.
+- **`rutter-api` and `rutter-core` have zero runtime dependencies and no logging.** Loader APIs are
+  `compileOnly` in the bootstraps. Confirmation lines are printed by the bootstraps, not core.
+- **Smoke provisioning is gated on the dependency EDGE**, not just with `onlyIf`, because `onlyIf`
+  never gates an edge. A plain `./gradlew build` must not download servers; verify that if you
+  touch `smoke/build.gradle`.
+- **Server JVMs come from per-version toolchain system properties** (`rutter.smoke.java.8`,
+  `.21`), never `java.home`. The Gradle daemon here runs Java 17, which can neither boot 1.21.x
+  nor is wanted for 1.7.10.
+
+## Pending decisions that are the owner's, not an agent's
+
+- Create `intisy/rutter` on GitHub and add a remote. **Nothing has been pushed.**
+- Merge `development` into `master`. README generation runs on the default branch only;
+  `development` carries `CONTENT.md` plus `.github/docs-config.yml` as the generator's input.
+- The smoke matrix is a `workflow_dispatch`-only CI caller by design, not a per-push gate: it
+  provisions four Minecraft servers. `.github/workflows/smoke.yml`.
+
+## What comes next
+
+Per the program overview's ordering:
+
+- **SP-2** Gradle packaging plugin - turns the hand-rolled `universalJar` in `rutter-testmod` into a
+  reusable `rutter { }` block.
+- **SP-3 Baritone universal jar - this is what the owner originally asked for.** Unblocked for
+  Fabric and Forge 1.17+; partially blocked on Forge 1.13-1.16 by limitation (1); blocked for
+  NeoForge until SP-1b.
+- **SP-1b** NeoForge backend - NeoForge ships no ModLauncher at all and needs a fifth bootstrap over
+  its own `IModFileCandidateLocator`, behind its own spike.
+- **SP-1c** (implied, not yet specced) the ModLauncher 8 visibility spike from limitation (1).
+- **SP-4/SP-5** unified loader API and the Minecraft facade.
