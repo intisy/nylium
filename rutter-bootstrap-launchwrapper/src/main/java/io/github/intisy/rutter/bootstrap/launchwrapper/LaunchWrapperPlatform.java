@@ -13,18 +13,26 @@ import java.util.Optional;
 
 final class LaunchWrapperPlatform implements Platform {
 
+    private final Environment environment;
+
+    /**
+     * @implNote LaunchWrapper exposes no client/server side flag, so the side is taken from which
+     * vanilla entry point {@link RutterBootTransformer} fired on. Resolving it here by
+     * {@code Class.forName} instead would reenter {@code LaunchClassLoader.findClass} for the very
+     * class that transformer is being asked to transform, and both frames would then define it.
+     */
+    LaunchWrapperPlatform(Environment environment) {
+        this.environment = environment;
+    }
+
     @Override
     public PlatformId id() {
         return PlatformId.LAUNCHWRAPPER;
     }
 
-    /**
-     * @implNote LaunchWrapper exposes no client/server side flag, so presence of the client entry
-     * point is the only signal available this early in startup.
-     */
     @Override
     public Environment environment() {
-        return exists("net.minecraft.client.Minecraft") ? Environment.CLIENT : Environment.SERVER;
+        return environment;
     }
 
     @Override
@@ -50,14 +58,5 @@ final class LaunchWrapperPlatform implements Platform {
     public Optional<String> nativeVersionProbe() {
         Object version = Launch.blackboard == null ? null : Launch.blackboard.get("rutter.mcVersion");
         return Optional.ofNullable(version).map(Object::toString);
-    }
-
-    private static boolean exists(String className) {
-        try {
-            Class.forName(className, false, Launch.classLoader);
-            return true;
-        } catch (ClassNotFoundException | LinkageError e) {
-            return false;
-        }
     }
 }

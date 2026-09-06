@@ -1,5 +1,6 @@
 package io.github.intisy.rutter.bootstrap.launchwrapper;
 
+import io.github.intisy.rutter.api.Environment;
 import io.github.intisy.rutter.core.ModuleDescriptor;
 import io.github.intisy.rutter.core.RutterKernel;
 import net.minecraft.launchwrapper.IClassTransformer;
@@ -8,8 +9,8 @@ import org.spongepowered.asm.launch.MixinBootstrap;
 
 import java.io.File;
 import java.nio.file.Paths;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -21,9 +22,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * {@code transform} call, but firing on literally the first class transformed reintroduces the
  * same problem: FML itself loads several of its own classes (triggering every registered
  * transformer, reentrantly) as part of finishing its own tweaker's setup, before the game is
- * truly ready. Filtering for the vanilla client or server entry point name, the same one {@link
- * LaunchWrapperPlatform#environment()} already checks for, is the reliable signal that every
- * tweaker (deobfuscation included) has finished and Rutter is no longer racing FML's own startup.
+ * truly ready. Filtering for a vanilla client or server entry point name is the reliable signal
+ * that every tweaker (deobfuscation included) has finished and Rutter is no longer racing FML's own
+ * startup. Which of the two fired is also the side, which is why {@link LaunchWrapperPlatform}
+ * takes the environment as a constructor argument rather than probing for the client class itself.
  * @implNote Unlike {@code injectIntoClassLoader}, which every tweaker always receives, this fires
  * only if one of {@link #LAUNCH_TARGETS} is actually loaded; {@link RutterTweaker} backstops that
  * with a shutdown hook that warns if {@link #BOOTED} was never set, so a variant that renames or
@@ -35,11 +37,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class RutterBootTransformer implements IClassTransformer {
 
-    private static final Set<String> LAUNCH_TARGETS = new HashSet<String>();
+    private static final Map<String, Environment> LAUNCH_TARGETS = new HashMap<String, Environment>();
 
     static {
-        LAUNCH_TARGETS.add("net.minecraft.client.Minecraft");
-        LAUNCH_TARGETS.add("net.minecraft.server.MinecraftServer");
+        LAUNCH_TARGETS.put("net.minecraft.client.Minecraft", Environment.CLIENT);
+        LAUNCH_TARGETS.put("net.minecraft.server.MinecraftServer", Environment.SERVER);
     }
 
     private static final AtomicBoolean BOOTED = new AtomicBoolean(false);
@@ -52,10 +54,11 @@ public final class RutterBootTransformer implements IClassTransformer {
 
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
-        if (LAUNCH_TARGETS.contains(transformedName) && BOOTED.compareAndSet(false, true)) {
+        Environment environment = LAUNCH_TARGETS.get(transformedName);
+        if (environment != null && BOOTED.compareAndSet(false, true)) {
             MixinBootstrap.init();
             ModuleDescriptor module = RutterKernel.boot(
-                    new LaunchWrapperPlatform(),
+                    new LaunchWrapperPlatform(environment),
                     Launch.classLoader,
                     Paths.get(gameDirectory.getAbsolutePath()).resolve("rutter").resolve("cache"));
             System.out.println("[Rutter] booted " + module);
