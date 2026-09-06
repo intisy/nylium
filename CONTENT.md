@@ -125,6 +125,38 @@ The plugin id is `io.github.intisy.rutter`, implemented by `rutter-gradle` in th
 Until a release exists, applying it means building `rutter-gradle` and resolving it from wherever
 you published that build yourself, not from Maven Central or any other public repository.
 
+Applying it also applies Gradle's `base` plugin, which is what gives the generated jar its
+`archiveBaseName` and `destinationDirectory` conventions. That decides where the artifact lands:
+with the `java` plugin also applied it goes to `build/libs`, and with `base` alone to
+`build/distributions`.
+
+Gradle 8.x is the tested floor. Every functional and differential test runs through the wrapper
+this repository ships, and nothing older has been exercised.
+
+### Tasks
+
+All five tasks sit in the `rutter` group, so plain `./gradlew tasks` lists them.
+
+| Task | Does |
+| --- | --- |
+| `rutterManifest` | writes `rutter-modules.properties` |
+| `rutterFabricModJson`, `rutterTransformationServices`, `rutterLaunchPlugins` | write the loader metadata for the declared platforms, so which of them exist depends on the declaration |
+| `rutterMetadata` | aggregates the writers above |
+| `rutterVerifyModules` | inspects the module jars |
+| `rutterUniversalJar` | assembles the universal jar |
+
+`rutterUniversalJar` is wired into `assemble`, so a plain `./gradlew build` produces it.
+
+It is registered eagerly, so a consumer can configure it from its own build script body without
+an `afterEvaluate` wrapper:
+
+```groovy
+tasks.named('rutterUniversalJar') {
+    archiveBaseName = 'mymod'
+    from('LICENSE')
+}
+```
+
 ### The `rutter { }` surface
 
 ```groovy
@@ -188,9 +220,11 @@ plugins are discovered from ModLauncher's boot module layer before Forge's `mods
 scanning ever runs.
 
 **`environment()` cannot detect CLIENT on either ModLauncher backend**, so a module declared
-with `environment = 'CLIENT'` never matches when the platform set includes `MODLAUNCHER_8` or
+with `environment = 'CLIENT'` never matches while the game is running on `MODLAUNCHER_8` or
 `MODLAUNCHER_9`. Both backends answer SERVER unconditionally, because the loader has not yet
-published its actual launch target at the hook Rutter boots from.
+published its actual launch target at the hook Rutter boots from. Declaring those platforms does
+not by itself break the module: one declaring `platforms = ['FABRIC', 'MODLAUNCHER_9']` with
+`environment = 'CLIENT'` still matches on Fabric.
 
 `NEOFORGE` is rejected by the plugin outright, at configuration time, because no NeoForge
 bootstrap exists yet.
@@ -233,8 +267,9 @@ Both look like omissions on first read; neither is.
 
 ### Validation
 
-The plugin fails the build at configuration time rather than shipping a jar that cannot
-dispatch:
+The plugin fails the build rather than shipping a jar that cannot dispatch.
+
+Rejected while the build is being configured, before any task runs:
 
 - Every `minecraft` range is parsed with the kernel's own `VersionRange` parser, so a range the
   game would reject cannot pass the build either.
@@ -242,10 +277,25 @@ dispatch:
 - `NEOFORGE` is rejected outright, as above.
 - A duplicate module name, an empty `rutter { }` block, and a module with no declared platforms
   are all rejected with a specific message rather than silently accepted.
+- A module with no `jar` is rejected: there is nothing to embed.
+- A missing `mod { id }` is rejected, and so is an id Fabric Loader would refuse; it has to match
+  `^[a-z][a-z0-9-_]{1,63}$`.
+- A blank `mod { modulePrefix }` is rejected. Leave it unset to default to the mod id.
+- A `mod { environment }` other than `*`, `client` or `server` is rejected. Fabric Loader accepts
+  exactly those three and refuses anything else at launch with "Invalid environment type"; the
+  value is matched case insensitively and written out lower case.
+- A module `environment` other than `CLIENT` or `SERVER` is rejected. That is a different
+  vocabulary from the mod-level field above, because it is Rutter's own rather than Fabric's.
+
+Rejected by `rutterVerifyModules`, which has to open the module jars and therefore runs at
+execution time:
+
 - A declared mixin config that is absent from its own module jar is rejected.
 - A module jar that bundles the Rutter API itself is rejected: the universal jar already
   provides it, so a module that shades it in duplicates classes the platform expects to find in
   exactly one place.
+- A module jar carrying its own `rutter-modules.properties` is rejected: only the universal jar
+  carries a manifest, and a module with one has shadowed Rutter in by accident.
 
 ## Known limitations
 
