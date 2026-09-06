@@ -1,17 +1,21 @@
 package io.github.intisy.rutter.gradle;
 
+import io.github.intisy.rutter.api.Environment;
 import io.github.intisy.rutter.api.PlatformId;
+import io.github.intisy.rutter.core.ModuleManifest;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -55,11 +59,32 @@ class ManifestRendererTest {
     void rendersWhatTheKernelCanRead() {
         List<ResolvedModule> modules = new ArrayList<ResolvedModule>();
         modules.add(module("1.21.11", PlatformId.FABRIC, "1.21.11", Collections.<String>emptyList()));
-        io.github.intisy.rutter.core.ModuleManifest manifest =
-                io.github.intisy.rutter.core.ModuleManifest.read(
-                        new java.io.StringReader(ManifestRenderer.render(modules)));
+        ModuleManifest manifest = ModuleManifest.read(
+                new StringReader(ManifestRenderer.render(modules)));
         assertEquals(1, manifest.modules().size());
         assertEquals("modules/testmod-1.21.11.jar", manifest.modules().get(0).path());
+    }
+
+    @Test
+    void rendersEnvironmentTheKernelCanRead() {
+        Set<PlatformId> platforms = new LinkedHashSet<PlatformId>();
+        platforms.add(PlatformId.FABRIC);
+        ResolvedModule module = new ResolvedModule("server-only", "modules/demo-server.jar",
+                platforms, "1.21.11", Environment.SERVER, Collections.<String>emptyList(), 0, null, null);
+        ModuleManifest manifest = ModuleManifest.read(
+                new StringReader(ManifestRenderer.render(Collections.singletonList(module))));
+        assertEquals(Optional.of(Environment.SERVER), manifest.modules().get(0).environment());
+    }
+
+    @Test
+    void rendersPriorityTheKernelCanRead() {
+        Set<PlatformId> platforms = new LinkedHashSet<PlatformId>();
+        platforms.add(PlatformId.FABRIC);
+        ResolvedModule module = new ResolvedModule("prioritized", "modules/demo-priority.jar",
+                platforms, "1.21.11", null, Collections.<String>emptyList(), 7, null, null);
+        ModuleManifest manifest = ModuleManifest.read(
+                new StringReader(ManifestRenderer.render(Collections.singletonList(module))));
+        assertEquals(7, manifest.modules().get(0).priority());
     }
 
     private static String normalize(String text) {
