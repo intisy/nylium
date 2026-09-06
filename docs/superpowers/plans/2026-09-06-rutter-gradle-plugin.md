@@ -1945,6 +1945,8 @@ import org.gradle.api.tasks.TaskAction;
 
 Give the task a `@Nested ListProperty<ModuleToVerify>`, where `ModuleToVerify` is a managed nested type holding `@Input` module name, `@Input` mixins and `@InputFile` jar **together**, plus an `@OutputFile` stamp file so the task can be up to date. In the action, loop the nested values, call `ModuleJarInspector.verify` for each, then write the stamp. Register it in `afterEvaluate` and add `jar.dependsOn(verify)` to `rutterUniversalJar`.
 
+**Order tracking must be impossible to bypass.** `NamedDomainObjectContainer` iterates sorted by name, not by insertion, so the manifest index cannot come from iterating the container. Track declaration order with a list populated by `modules.whenObjectAdded(spec -> moduleOrder.add(spec.getName()))` in the extension's constructor, and do **not** also append inside `module(String, Action)` or names double up. A callback is required rather than appending in `module(...)`, because `getModules()` is public: a module created through the container directly would otherwise never reach the list and, since `resolve()` iterates the list, would vanish from the manifest entirely while both emptiness guards still saw it in the container. Add a cross-check in `resolve()` that throws when `moduleOrder.size() != modules.size()`, so the two sources of truth cannot diverge unnoticed, and a test that declares a module through `getModules().create(...)` and asserts it reaches the manifest.
+
 Keeping the three fields in one value type is the point. A map of mixins keyed by name plus a separately populated file collection has no type-level guarantee the two stay aligned, so a later change to one population order would silently pair a jar with another module's mixin list, producing either a false pass or an error naming the wrong module.
 
 `@InputFile` on the nested jar property is also what carries the implicit task dependency: a consumer writing `jar = tasks.named('remapJar').flatMap { it.archiveFile }` gets `remapJar` wired as a producer automatically, so verification cannot run before the jar is built. Add a functional test that proves this rather than assuming it: declare a producer task in the fixture, wire a module's `jar` from its output, invoke `rutterVerifyModules` **without** naming the producer, and assert the producer actually executed. Also add a test that a jar containing `io/github/intisy/rutter/apiextra/Foo.class` is accepted, since the trailing slash in `API_PREFIX` is what makes that correct and is exactly the character a later simplification removes.
@@ -1990,7 +1992,11 @@ subprojectsToPublish = [':rutter-api', ':rutter-core', ':rutter-bootstrap-fabric
                         ':rutter-bootstrap-modlauncher9']
 ```
 
-Add to each of those projects, from `rutter-gradle/build.gradle` using `project(path).afterEvaluate`, a `maven { name = 'rutterTest'; url = testRepository }` publishing repository, or add it once in the root build for all subprojects. Prefer the root build: it is one block, and every subproject already has `maven-publish` applied.
+Put the repository in the root build's `subprojects` block, but **gate the publication itself to those six projects**. The root build applies `java-library` to all nine subprojects, so `components.java` resolves everywhere: an ungated publication would also publish the `rutter-testmod` fixture jar and the `smoke` harness under the real group, and would give `rutter-gradle` a second publication at the same coordinates as `java-gradle-plugin`'s own `pluginMaven`, which Gradle reports as publications overwriting each other.
+
+Declare the list once as `ext.embeddedArtifactPaths` in the root build and have `rutter-gradle/build.gradle` read `rootProject.ext.embeddedArtifactPaths`. Two copies of the same six paths in two build scripts can drift silently, and nothing would catch it.
+
+Note that no publication exists anywhere in this repo by default: `maven-publish` is applied but declares nothing, so the publish task is a no-op until an explicit `maven(MavenPublication) { from components.java }` is added.
 
 In the root `build.gradle`, inside the existing `subprojects` block, add:
 

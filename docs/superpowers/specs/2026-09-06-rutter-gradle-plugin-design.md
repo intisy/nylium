@@ -162,7 +162,17 @@ Three layers, ordered by how much they can actually catch:
    changes.
 3. **Differential, against the known-good artifact.** Rebuild `rutter-testmod`'s universal jar
    through the plugin and require it to match the hand-rolled jar: identical entry set, identical
-   bytes for every generated metadata file, identical bytes for each embedded module jar.
+   bytes for every generated metadata file, identical bytes for each embedded module jar, and
+   identical bytes for **every remaining entry**, skipping only directory entries, the manifest, and
+   entries a more specific assertion already covers.
+
+Content-comparing only the metadata while name-comparing the hundreds of embedded class entries
+would let a stale or wrong-version `rutter-core` pass, reducing the claim from "reproduces the
+artifact" to "reproduces its shape". Any legitimate difference belongs in a named allowlist rather
+than a loosened assertion; as built the allowlist is empty, so the reproduction is exact. The
+`TweakClass` manifest attribute gets its own assertion, because the manifest is excluded from the
+byte comparison and a misspelling there would break the Forge 1.7.10 boot path with an otherwise
+green gate.
 
 `rutter-gradle` stays an ordinary subproject and the fixture applies the plugin through TestKit's
 `withPluginClasspath()`. That is TestKit's intended mechanism, it needs no publishing step, and it
