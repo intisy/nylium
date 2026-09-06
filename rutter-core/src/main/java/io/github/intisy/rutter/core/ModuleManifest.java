@@ -24,8 +24,10 @@ public final class ModuleManifest {
 
     public static final String RESOURCE = "rutter-modules.properties";
 
-    // Plain TreeSet<String> order would put "10" before "2"; module selection depends on
-    // this order when several candidates tie on specificity.
+    /**
+     * @implNote Plain {@code String} order would put "10" before "2", and selection falls back to
+     *     this order whenever several candidates tie on specificity and priority.
+     */
     private static final Comparator<String> INDEX_ORDER = (left, right) -> {
         Integer leftNumber = tryParseInt(left);
         Integer rightNumber = tryParseInt(right);
@@ -41,14 +43,17 @@ public final class ModuleManifest {
         this.modules = Collections.unmodifiableList(modules);
     }
 
+    /**
+     * @implNote Reads through a {@link Reader} because {@code Properties.load(InputStream)} is
+     *     specified as ISO-8859-1, which would mangle any non-ASCII module path; the reader
+     *     overload is what lets the charset be pinned to UTF-8.
+     */
     public static ModuleManifest readFrom(ClassLoader loader, String resource) {
         InputStream stream = loader.getResourceAsStream(resource);
         if (stream == null) {
             throw new RutterException("No Rutter module manifest at '" + resource
                     + "'. The jar was built without one, or it was stripped by shading.");
         }
-        // Properties.load(InputStream) is specified as ISO-8859-1, which would mangle any
-        // non-ASCII module path; the Reader overload lets us pin UTF-8.
         try (Reader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
             return read(reader);
         } catch (IOException e) {
