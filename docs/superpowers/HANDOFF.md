@@ -1,14 +1,18 @@
 # READ FIRST: Rutter handoff
 
-**Written 2026-09-06.** SP-1 (the kernel) is complete. This file is the entry point for any new
-session. Everything below is verifiable from the repo; nothing depends on a prior conversation.
+**Written 2026-09-06.** SP-1 (the kernel) and SP-2 (the Gradle packaging plugin) are both complete.
+This file is the entry point for any new session. Everything below is verifiable from the repo;
+nothing depends on a prior conversation.
 
 ## Where things are
 
 - Repo: `F:\Documents\GitHub\intisy\minecraft\mods\Rutter`
-- Branch: `development`, 55 commits ahead of `master`. **No git remote configured.**
+- Branch: `development`, well ahead of `master`. **No git remote configured, nothing pushed.**
 - `master` holds only the initial spec and plan commits.
-- Build: `./gradlew build --offline` is green. Smoke matrix: `./gradlew :smoke:test -PrutterSmoke`.
+- Build: `./gradlew build --offline` is green with `:smoke:test SKIPPED`.
+- Smoke matrix: `./gradlew :smoke:test -PrutterSmoke`, optionally `-PrutterSmokeJar=<abs path>` to
+  test a specific universal jar. **Add `--rerun-tasks`**: with unchanged inputs the task reports
+  `UP-TO-DATE` and launches no server, so a bare `BUILD SUCCESSFUL` proves nothing.
 
 ## Read these, in this order
 
@@ -23,6 +27,15 @@ session. Everything below is verifiable from the repo; nothing depends on a prio
    to rework something.
 5. `docs/superpowers/plans/2026-09-05-rutter-kernel.md` - the executed plan. **Its code samples are
    unreliable**: several APIs it names do not exist. See "Plan defects" below.
+6. `docs/superpowers/specs/2026-09-06-rutter-gradle-plugin-design.md` - SP-2's design. Read it before
+   changing the plugin: several choices look like omissions without it, notably the generated
+   `fabric.mod.json` carrying no `mixins` key and no `depends.minecraft`.
+7. `docs/superpowers/plans/2026-09-06-rutter-gradle-plugin-rulings.md` - SP-2's 39 rulings, the five
+   bugs the process caught and where each hid, and three claims that agents corrected with
+   measurements. Read this before reworking the plugin.
+8. `docs/superpowers/plans/2026-09-06-rutter-gradle-plugin.md` - SP-2's executed plan, amended
+   throughout as defects in it were found. Its code is more trustworthy than SP-1's, but the rulings
+   file records where it was wrong.
 
 ## What is proven, and how
 
@@ -109,9 +122,13 @@ before writing code against any API the plan names:
 
 Per the program overview's ordering:
 
-- **SP-2** Gradle packaging plugin - turns the hand-rolled `universalJar` in `rutter-testmod` into a
-  reusable `rutter { }` block.
-- **SP-3 Baritone universal jar - this is what the owner originally asked for.** Unblocked for
+- **SP-2 Gradle packaging plugin: DONE.** `io.github.intisy.rutter` assembles a universal jar from a
+  `rutter { }` declaration. Its acceptance gate proves a plugin-built jar is byte-identical in every
+  entry to the hand-rolled reference, and the four-backend smoke matrix passes against the
+  plugin-built jar. See `specs/2026-09-06-rutter-gradle-plugin-design.md`,
+  `plans/2026-09-06-rutter-gradle-plugin.md` and its rulings file.
+- **SP-3 Baritone universal jar - this is what the owner originally asked for, and it is now
+  unblocked by SP-2.** Unblocked for
   Fabric and Forge 1.17+; partially blocked on Forge 1.13-1.16 by limitation (1); blocked for
   NeoForge until SP-1b.
 - **SP-1b** NeoForge backend - NeoForge ships no ModLauncher at all and needs a fifth bootstrap over
