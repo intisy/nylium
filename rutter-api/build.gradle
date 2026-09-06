@@ -1,1 +1,12 @@
-// intentionally empty: rutter-api must have zero dependencies
+import io.github.intisy.rutter.gradle.ApiPurityTask
+
+// intentionally no dependencies: rutter-api must stay standalone
+
+tasks.register('checkApiPurity', ApiPurityTask) {
+    jar = tasks.jar.archiveFile
+    dependsOn tasks.jar
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('checkApiPurity')
+}
