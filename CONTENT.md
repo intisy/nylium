@@ -33,6 +33,10 @@ The Fabric row is the discrimination case: two different Minecraft versions in t
 each resolving to its own module, is the smallest proof that selection actually discriminates
 rather than always picking the same candidate.
 
+Each backend is proven on exactly the version listed above (two for Fabric). The wider ranges each
+backend covers in source are compatible but unrun, and Forge 1.17 to 1.20.x is explicitly declared
+unverified rather than supported.
+
 ModLauncher 9+ currently covers Forge only. The NeoForge loader runs no ModLauncher at all, so
 NeoForge support is a separate backend and not part of this kernel yet.
 
@@ -57,8 +61,10 @@ module.1.mixins=mixins.mymod.json
 module.1.entrypoint=com.example.mymod.Forge116Module
 ```
 
-- `path` and `platforms` are required. `platforms` is a comma-separated list of
-  `LAUNCHWRAPPER`, `MODLAUNCHER_8`, `MODLAUNCHER_9`, `NEOFORGE` or `FABRIC`.
+- `path`, `platforms` and `minecraft` are all required. `platforms` is a comma-separated list of
+  `LAUNCHWRAPPER`, `MODLAUNCHER_8`, `MODLAUNCHER_9` or `FABRIC`. `NEOFORGE` parses too, but it is
+  reserved for the deferred NeoForge backend: no backend can report that platform yet, so a module
+  declaring it is dead weight in the jar.
 - `minecraft` is a version range: an exact version (`1.21.11`), or bracket notation
   (`[1.20,1.21.11]`, `[1.20,)`) where `[` and `]` are inclusive and `(` and `)` are exclusive.
 - `environment` (`CLIENT` or `SERVER`), `mixins` (comma-separated config names), `priority`
@@ -83,11 +89,21 @@ hand, the same way `rutter-testmod` does in this repository:
 3. Bundle the manifest, the module jars, and the `rutter-bootstrap-*` artifact for each loader
    you target into one outer jar, wired to that loader's own entry contract (Fabric's
    `preLaunchEntrypoint`, LaunchWrapper's tweaker, ModLauncher's `ITransformationService`).
-4. That is the whole integration surface. Each bootstrap already calls
-   `RutterKernel.boot(platform, classLoader, cacheDirectory)` from its loader's own hook: on
-   boot, Rutter detects the platform and Minecraft version, selects the matching module,
-   extracts it to a hash-keyed cache directory, puts it on the classpath, registers its mixin
-   configs, and invokes its entrypoint.
+4. Each bootstrap already calls `RutterKernel.boot(platform, classLoader, cacheDirectory)` from
+   its loader's own hook: on boot, Rutter detects the platform and Minecraft version, selects the
+   matching module, extracts it to a hash-keyed cache directory, puts it on the classpath,
+   registers its mixin configs, and invokes its entrypoint.
+
+Two loader-specific requirements come on top of that, and both bite at runtime rather than at
+build time:
+
+- **A mixin config used with the ModLauncher 9+ backend must set `"target": "DEFAULT"`** (or
+  another valid phase) in its JSON. Registration happens late enough there that a config with no
+  target has no current phase to fall back on and throws a `NullPointerException` inside Mixin's
+  own `MixinConfig.onLoad`.
+- **The LaunchWrapper backend needs Mixin on the runtime classpath**, which Forge 1.7.10 does not
+  ship. A consumer targeting that era has to put a Mixin jar there itself; this repository's own
+  smoke provisioning synthesises a launcher jar whose `Class-Path` adds one.
 
 ## Known limitations
 
@@ -98,7 +114,8 @@ This is a working kernel with two documented gaps, not a finished product:
   entrypoint invoked. But `ITransformationService` discovery and the game's own classloader are
   built as sibling classloaders, and the discovery hook fires before the game classloader
   exists, so a module that needs to touch a Minecraft class, or mixin into one, cannot
-  currently work through this backend. Fixing this needs its own spike, tracked separately.
+  currently work through this backend. Fixing this needs its own spike, which is recorded in the
+  SP-1 design spec rather than in any issue tracker.
 - **A ModLauncher 9+ module cannot currently be installed by dropping it into `mods/`.**
   `ILaunchPluginService` is discovered only from ModLauncher's boot module layer, which is
   built from the literal JVM classpath, not from Forge's own `mods/` folder scanning. The
