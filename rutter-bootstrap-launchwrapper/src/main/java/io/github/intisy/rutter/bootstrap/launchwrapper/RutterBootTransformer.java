@@ -1,5 +1,6 @@
 package io.github.intisy.rutter.bootstrap.launchwrapper;
 
+import io.github.intisy.rutter.core.ModuleDescriptor;
 import io.github.intisy.rutter.core.RutterKernel;
 import net.minecraft.launchwrapper.IClassTransformer;
 import net.minecraft.launchwrapper.Launch;
@@ -23,6 +24,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * truly ready. Filtering for the vanilla client or server entry point name, the same one {@link
  * LaunchWrapperPlatform#environment()} already checks for, is the reliable signal that every
  * tweaker (deobfuscation included) has finished and Rutter is no longer racing FML's own startup.
+ * @implNote Unlike {@code injectIntoClassLoader}, which every tweaker always receives, this fires
+ * only if one of {@link #LAUNCH_TARGETS} is actually loaded; {@link RutterTweaker} backstops that
+ * with a shutdown hook that warns if {@link #BOOTED} was never set, so a variant that renames or
+ * bypasses those classes fails loudly instead of silently.
+ * @implNote if a module's own entrypoint, invoked from inside {@link RutterKernel#boot} below,
+ * eagerly touches the very class this transformer is transforming, that happens from inside that
+ * class's own {@code transform()} call, before {@code LaunchClassLoader} has finished defining it;
+ * that reentrant path is unexercised territory.
  */
 public final class RutterBootTransformer implements IClassTransformer {
 
@@ -37,14 +46,19 @@ public final class RutterBootTransformer implements IClassTransformer {
 
     static volatile File gameDirectory = new File(".");
 
+    static boolean wasBooted() {
+        return BOOTED.get();
+    }
+
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
         if (LAUNCH_TARGETS.contains(transformedName) && BOOTED.compareAndSet(false, true)) {
             MixinBootstrap.init();
-            RutterKernel.boot(
+            ModuleDescriptor module = RutterKernel.boot(
                     new LaunchWrapperPlatform(),
                     Launch.classLoader,
                     Paths.get(gameDirectory.getAbsolutePath()).resolve("rutter").resolve("cache"));
+            System.out.println("[Rutter] booted " + module);
         }
         return basicClass;
     }

@@ -23,11 +23,25 @@ public final class RutterTweaker implements ITweaker {
      * bootstrapping Mixin here was observed to make that later tweaker's own class registration
      * fail verification. Both are deferred to {@link RutterBootTransformer}, which runs on the
      * first class LaunchClassLoader transforms, after every tweaker has finished injecting.
+     * @implNote The transformer only fires if its watched class actually loads, unlike this
+     * method, which LaunchWrapper always calls; the shutdown hook here is what makes a variant
+     * that never loads either class fail loudly instead of leaving the kernel silently unbooted.
      */
     @Override
     public void injectIntoClassLoader(LaunchClassLoader classLoader) {
         RutterBootTransformer.gameDirectory = gameDirectory;
         classLoader.registerTransformer(RutterBootTransformer.class.getName());
+        Runtime.getRuntime().addShutdownHook(new Thread("rutter-boot-watchdog") {
+            @Override
+            public void run() {
+                if (!RutterBootTransformer.wasBooted()) {
+                    System.err.println("[Rutter] WARNING: shutting down without ever booting the "
+                            + "kernel; neither net.minecraft.client.Minecraft nor "
+                            + "net.minecraft.server.MinecraftServer was ever loaded through this "
+                            + "LaunchClassLoader.");
+                }
+            }
+        });
     }
 
     @Override
