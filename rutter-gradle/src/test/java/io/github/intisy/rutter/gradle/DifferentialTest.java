@@ -185,6 +185,44 @@ class DifferentialTest {
     }
 
     /**
+     * @implNote The four bootstrap entry class names are otherwise duplicated knowledge: literals
+     *     in the plugin, re-asserted as the same literals in the renderer tests, and again in
+     *     {@code rutter-testmod}'s hand-rolled block, so the differential would compare two copies
+     *     of one typo. This reads each name back out of the produced jar and requires the class it
+     *     names to be embedded, which is what the loader does at launch.
+     */
+    @Test
+    void everyDeclaredBootstrapEntryNamesAnEmbeddedClass() throws IOException {
+        Set<String> entries = new HashSet<String>(sortedEntries(producedJar));
+        List<String> declared = new ArrayList<String>();
+        declared.addAll(nonBlankLines(readEntryText(producedJar, TRANSFORMATION_SERVICE_FILE)));
+        declared.addAll(nonBlankLines(readEntryText(producedJar, LAUNCH_PLUGIN_SERVICE_FILE)));
+        declared.add(manifestAttribute(producedJar, "TweakClass"));
+        declared.add(preLaunchEntrypoint(producedJar));
+        assertEquals(5, declared.size(), "expected five declared bootstrap entries: " + declared);
+        for (String className : declared) {
+            assertTrue(entries.contains(className.replace('.', '/') + ".class"),
+                    "Bootstrap entry '" + className + "' names no class embedded in the jar");
+        }
+    }
+
+    private static List<String> nonBlankLines(String text) {
+        List<String> lines = new ArrayList<String>();
+        for (String line : text.split("\\R")) {
+            if (!line.trim().isEmpty()) {
+                lines.add(line.trim());
+            }
+        }
+        return lines;
+    }
+
+    private static String preLaunchEntrypoint(Path jar) throws IOException {
+        JsonObject json =
+                JsonParser.parseString(readEntryText(jar, "fabric.mod.json")).getAsJsonObject();
+        return json.getAsJsonObject("entrypoints").getAsJsonArray("preLaunch").get(0).getAsString();
+    }
+
+    /**
      * @implNote The existing configuration cache test only ever resolved a test-only
      *     {@code flatDir} repository; this reuses the same fixture that resolves the six embedded
      *     artifacts through {@code rutterEmbed} against a real published maven repository, which
