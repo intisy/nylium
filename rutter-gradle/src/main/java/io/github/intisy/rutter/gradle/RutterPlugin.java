@@ -81,6 +81,9 @@ public class RutterPlugin implements Plugin<Project> {
             }
             metadata.configure(task -> task.dependsOn(writers));
 
+            final TaskProvider<RutterVerifyModulesTask> verify =
+                    verifyModulesTask(evaluated, modules);
+
             final Configuration embed = embedConfiguration(evaluated, platforms);
             final boolean launchWrapper = platforms.contains(PlatformId.LAUNCHWRAPPER);
 
@@ -90,6 +93,7 @@ public class RutterPlugin implements Plugin<Project> {
                 // FAIL surfaces a colliding entry instead of silently keeping one, per SP-1's lesson.
                 jar.setDuplicatesStrategy(DuplicatesStrategy.FAIL);
                 jar.dependsOn(metadata);
+                jar.dependsOn(verify);
 
                 final ArchiveOperations archives = archiveOperations;
                 jar.from(evaluated.provider(() -> {
@@ -129,6 +133,24 @@ public class RutterPlugin implements Plugin<Project> {
         map.put(PlatformId.MODLAUNCHER_8, "rutter-bootstrap-modlauncher8");
         map.put(PlatformId.MODLAUNCHER_9, "rutter-bootstrap-modlauncher9");
         return map;
+    }
+
+    private static TaskProvider<RutterVerifyModulesTask> verifyModulesTask(
+            Project project, List<ResolvedModule> modules) {
+        return project.getTasks().register("rutterVerifyModules", RutterVerifyModulesTask.class,
+                task -> {
+                    task.setDescription("Rejects module jars that cannot work at runtime.");
+                    for (ResolvedModule module : modules) {
+                        RutterVerifyModulesTask.ModuleToVerify entry = project.getObjects()
+                                .newInstance(RutterVerifyModulesTask.ModuleToVerify.class);
+                        entry.getModuleName().set(module.name());
+                        entry.getMixins().set(module.mixins());
+                        entry.getJar().set(module.jar());
+                        task.getModules().add(entry);
+                    }
+                    task.getStamp().set(project.getLayout().getBuildDirectory()
+                            .file("rutter/rutterVerifyModules.stamp"));
+                });
     }
 
     private static Configuration embedConfiguration(Project project, Set<PlatformId> platforms) {

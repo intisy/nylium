@@ -50,7 +50,7 @@ class UniversalJarConfigurationCacheFunctionalTest {
     private void fixture() throws IOException {
         String version = pluginVersion();
         write("settings.gradle", "rootProject.name = 'fixture'\n");
-        write("module.jar", "not a real jar for this test\n");
+        emptyJar("module.jar");
         emptyJar("libs/rutter-api-" + version + ".jar");
         emptyJar("libs/rutter-core-" + version + ".jar");
         emptyJar("libs/rutter-bootstrap-fabric-" + version + ".jar");
