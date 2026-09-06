@@ -1,3 +1,5 @@
+import io.github.intisy.rutter.gradle.ClassFileVersionTask
+
 subprojects {
     apply plugin: 'java-library'
     apply plugin: 'maven-publish'
@@ -25,7 +27,7 @@ subprojects {
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
-        options.release = (project.findProperty('rutterJavaRelease') ?: '8') as Integer
+        options.release = 8
         options.compilerArgs << '-Xlint:-options' // Java 8 floor is deliberate; the JDK's obsolescence notice is not actionable
     }
 
@@ -38,5 +40,13 @@ subprojects {
     tasks.withType(Test).configureEach {
         useJUnitPlatform()
         testLogging { exceptionFormat = 'full' }
+    }
+
+    tasks.register('checkClassFileVersion', ClassFileVersionTask) {
+        jar = tasks.jar.archiveFile
+    }
+
+    tasks.named('check') {
+        dependsOn tasks.named('checkClassFileVersion')
     }
 }
