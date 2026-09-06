@@ -95,6 +95,34 @@ class ModuleManifestTest {
     }
 
     @Test
+    void specificityRewardsDeclaringFewerPlatformsAtTheSameVersion() {
+        ModuleDescriptor twoPlatforms = read(
+                "module.0.path=a.jar\nmodule.0.platforms=FABRIC,MODLAUNCHER_9\n"
+                        + "module.0.minecraft=1.21.11\n")
+                .modules().get(0);
+        ModuleDescriptor onePlatform = read(
+                "module.0.path=a.jar\nmodule.0.platforms=FABRIC\n"
+                        + "module.0.minecraft=1.21.11\n")
+                .modules().get(0);
+
+        assertTrue(onePlatform.specificity() > twoPlatforms.specificity());
+    }
+
+    @Test
+    void specificityRanksPlatformCountAboveVersionNarrowness() {
+        ModuleDescriptor twoPlatformsExactVersion = read(
+                "module.0.path=a.jar\nmodule.0.platforms=FABRIC,MODLAUNCHER_9\n"
+                        + "module.0.minecraft=1.21.11\n")
+                .modules().get(0);
+        ModuleDescriptor onePlatformOpenRange = read(
+                "module.0.path=a.jar\nmodule.0.platforms=FABRIC\n"
+                        + "module.0.minecraft=[1.20,)\n")
+                .modules().get(0);
+
+        assertTrue(twoPlatformsExactVersion.specificity() > onePlatformOpenRange.specificity());
+    }
+
+    @Test
     void rejectsAnEmptyManifest() {
         assertThrows(RutterException.class, () -> read("\n"));
     }

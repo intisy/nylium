@@ -57,6 +57,19 @@ public final class ModuleDescriptor {
         return Optional.ofNullable(entrypoint);
     }
 
+    /**
+     * Ranks how narrowly this module constrains itself, highest first, which is the primary order
+     * {@link ModuleSelector} considers candidates in.
+     *
+     * @implNote The terms are deliberately unequal: one point for every platform the module does
+     *     <em>not</em> declare (so a single-platform module scores four of the five), two for an
+     *     exact Minecraft version, one for a closed range, none for an open one, and one for a
+     *     declared environment. Platform count is therefore the largest single term, though a narrow
+     *     version range can still outweigh it: a two-platform module pinned to an exact version
+     *     scores 3 + 2 and so beats a single-platform module with an open range, which scores
+     *     4 + 0. Equal scores fall through to declared priority, highest first, and equal priorities
+     *     keep manifest index order.
+     */
     public int specificity() {
         int score = 0;
         if (environment != null) {

@@ -272,4 +272,67 @@ class RutterKernelTest {
             assertEquals(1, RecordingEntrypoint.invocations);
         }
     }
+
+    /**
+     * @implNote Only records what it was asked to load and delegates; the point is that the loader
+     * the kernel resolves the entrypoint through is this one and not the source loader, which the
+     * source loader's null parent makes provable rather than merely plausible.
+     */
+    static final class RecordingClassLoader extends ClassLoader {
+        final java.util.List<String> requested = new java.util.ArrayList<>();
+
+        RecordingClassLoader(ClassLoader parent) {
+            super(parent);
+        }
+
+        @Override
+        public Class<?> loadClass(String name) throws ClassNotFoundException {
+            requested.add(name);
+            return super.loadClass(name);
+        }
+    }
+
+    private static final class RetargetingFakePlatform extends FakePlatform {
+
+        private final RecordingClassLoader moduleLoader;
+
+        RetargetingFakePlatform(RecordingClassLoader moduleLoader) {
+            super(PlatformId.MODLAUNCHER_9, Environment.SERVER, "1.21.11");
+            this.moduleLoader = moduleLoader;
+        }
+
+        @Override
+        public ClassLoader moduleClassLoader(ClassLoader source) {
+            return moduleLoader;
+        }
+    }
+
+    @Test
+    void resolvesTheEntrypointThroughThePlatformsModuleClassLoader(@TempDir Path dir) throws Exception {
+        RecordingEntrypoint.invocations = 0;
+        RecordingEntrypoint.callOrder = null;
+        String manifest = "module.0.path=modules/mod-1.21.11.jar\n"
+                + "module.0.platforms=MODLAUNCHER_9\n"
+                + "module.0.minecraft=1.21.11\n"
+                + "module.0.entrypoint=" + RecordingEntrypoint.class.getName() + "\n";
+        Path outer = dir.resolve("outer.jar");
+        try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(outer))) {
+            jar.putNextEntry(new JarEntry(ModuleManifest.RESOURCE));
+            jar.write(manifest.getBytes(StandardCharsets.UTF_8));
+            jar.closeEntry();
+            jar.putNextEntry(new JarEntry("modules/mod-1.21.11.jar"));
+            jar.write(tinyJar("newer"));
+            jar.closeEntry();
+        }
+        RecordingClassLoader moduleLoader = new RecordingClassLoader(getClass().getClassLoader());
+        RetargetingFakePlatform platform = new RetargetingFakePlatform(moduleLoader);
+
+        try (URLClassLoader source = new URLClassLoader(new URL[]{outer.toUri().toURL()}, null)) {
+            RutterKernel.boot(platform, source, dir.resolve("cache"));
+
+            assertEquals(1, RecordingEntrypoint.invocations);
+            assertTrue(moduleLoader.requested.contains(RecordingEntrypoint.class.getName()),
+                    moduleLoader.requested.toString());
+        }
+    }
 }

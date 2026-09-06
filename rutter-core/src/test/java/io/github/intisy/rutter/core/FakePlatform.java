@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-final class FakePlatform implements Platform {
+class FakePlatform implements Platform {
 
     private final PlatformId id;
     private final Environment environment;
