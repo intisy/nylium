@@ -130,6 +130,21 @@ class ValidationTest {
     }
 
     @Test
+    void acceptsAModuleCreatedThroughTheContainerDirectly() {
+        Project project = ProjectBuilder.builder().build();
+        project.getPlugins().apply("io.github.intisy.rutter");
+        RutterExtension rutter = (RutterExtension) project.getExtensions().getByName("rutter");
+        rutter.mod(mod -> mod.getId().set("demo"));
+        ModuleSpec spec = rutter.getModules().create("1.21.11");
+        spec.getJar().set(new File(project.getProjectDir(), "module.jar"));
+        spec.getPlatforms().set(Collections.singletonList("FABRIC"));
+        spec.getMinecraft().set("1.21.11");
+        List<ResolvedModule> modules = rutter.resolve();
+        assertEquals(1, modules.size());
+        assertEquals("modules/demo-1.21.11.jar", modules.get(0).path());
+    }
+
+    @Test
     void rejectsAModuleWithoutAJar() {
         Project project = ProjectBuilder.builder().build();
         project.getPlugins().apply("io.github.intisy.rutter");

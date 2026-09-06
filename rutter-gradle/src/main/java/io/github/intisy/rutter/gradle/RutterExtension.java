@@ -24,7 +24,9 @@ public class RutterExtension {
     /**
      * @implNote {@code NamedDomainObjectContainer} iterates sorted by name, not insertion order,
      *     but the manifest's module index has to be declaration order, so that order is tracked
-     *     separately here.
+     *     separately here. Populated by {@code whenObjectAdded}, not by {@link #module}, so every
+     *     entry point that creates a module (the DSL method, {@code modules.create(...)}, the
+     *     Groovy container form) is covered, not only the one this class exposes itself.
      */
     private final List<String> moduleOrder = new ArrayList<String>();
 
@@ -32,6 +34,7 @@ public class RutterExtension {
         this.project = project;
         this.mod = project.getObjects().newInstance(ModSpec.class);
         this.modules = project.getObjects().domainObjectContainer(ModuleSpec.class);
+        this.modules.whenObjectAdded(spec -> moduleOrder.add(spec.getName()));
     }
 
     public void mod(Action<? super ModSpec> action) {
@@ -44,7 +47,6 @@ public class RutterExtension {
 
     public void module(String name, Action<? super ModuleSpec> action) {
         action.execute(modules.create(name));
-        moduleOrder.add(name);
     }
 
     public NamedDomainObjectContainer<ModuleSpec> getModules() {
@@ -83,6 +85,10 @@ public class RutterExtension {
         if (modules.isEmpty()) {
             throw new InvalidUserDataException(
                     "Rutter declares no modules. Add at least one rutter { module('...') { } } block.");
+        }
+        if (moduleOrder.size() != modules.size()) {
+            throw new InvalidUserDataException("Rutter tracked " + moduleOrder.size()
+                    + " declared modules but the container holds " + modules.size() + ".");
         }
         List<ResolvedModule> resolved = new ArrayList<ResolvedModule>();
         for (String name : moduleOrder) {

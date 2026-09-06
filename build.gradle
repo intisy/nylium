@@ -1,5 +1,15 @@
 import io.github.intisy.rutter.gradle.ClassFileVersionTask
 
+/**
+ * @implNote These six are the artifacts {@code rutterUniversalJar} embeds, and the only ones a
+ *     release actually publishes; {@code rutter-gradle} keeps its own {@code java-gradle-plugin}
+ *     publication instead of a second one at the same coordinates, and {@code rutter-testmod}/
+ *     {@code smoke} are not release artifacts.
+ */
+def embeddedArtifactPaths = [':rutter-api', ':rutter-core', ':rutter-bootstrap-fabric',
+                             ':rutter-bootstrap-launchwrapper', ':rutter-bootstrap-modlauncher8',
+                             ':rutter-bootstrap-modlauncher9']
+
 subprojects {
     apply plugin: 'java-library'
     apply plugin: 'maven-publish'
@@ -56,9 +66,11 @@ subprojects {
                 url = rootProject.layout.buildDirectory.dir('test-repo')
             }
         }
-        publications {
-            maven(MavenPublication) {
-                from components.java
+        if (embeddedArtifactPaths.contains(project.path)) {
+            publications {
+                maven(MavenPublication) {
+                    from components.java
+                }
             }
         }
     }

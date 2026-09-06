@@ -219,6 +219,13 @@ public class RutterPlugin implements Plugin<Project> {
         return platforms;
     }
 
+    /**
+     * @implNote Everything written under {@code build/rutter/} becomes universal jar content:
+     *     {@code rutterUniversalJar} embeds that whole directory (see the {@code jar.from} call
+     *     above). Internal task state that must not be shipped, such as
+     *     {@code RutterVerifyModulesTask}'s stamp, belongs under {@code build/rutter-internal/}
+     *     instead.
+     */
     private static TaskProvider<RutterTextFileTask> writer(Project project, String taskName,
                                                            String relativePath, String content) {
         Provider<String> body = project.provider(() -> content);

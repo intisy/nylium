@@ -54,7 +54,6 @@ tasks.named('test') {
     dependsOn ':rutter-testmod:universalJar'
 
     systemProperty 'rutter.test.repo', testRepository.get().asFile.absolutePath
-    systemProperty 'rutter.test.version', project.version
     systemProperty 'rutter.test.modules',
             project(':rutter-testmod').layout.buildDirectory.dir('modules').get().asFile.absolutePath
     systemProperty 'rutter.test.reference',
