@@ -1,5 +1,0 @@
-dependencies {
-    implementation project(':rutter-core')
-    compileOnly 'net.fabricmc:fabric-loader:0.16.9'
-    compileOnly 'org.spongepowered:mixin:0.8.7'
-}

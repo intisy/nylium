@@ -1,0 +1,11 @@
+import io.github.intisy.nylium.gradle.ApiPurityTask
+
+// intentionally no dependencies: nylium-api must stay standalone
+
+tasks.register('checkApiPurity', ApiPurityTask) {
+    jar = tasks.jar.archiveFile
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('checkApiPurity')
+}

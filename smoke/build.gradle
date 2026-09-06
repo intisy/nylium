@@ -2,17 +2,17 @@ import org.gradle.jvm.toolchain.JavaLanguageVersion
 
 def serversDir = layout.buildDirectory.dir('servers')
 
-def defaultUniversalJar = project(':rutter-testmod').layout.buildDirectory.file('universal/rutter-testmod-universal.jar')
+def defaultUniversalJar = project(':nylium-testmod').layout.buildDirectory.file('universal/nylium-testmod-universal.jar')
 
 /**
- * @implNote Read inside each provisioning task's doLast, at execution time, so -PrutterSmokeJar
- * behaves like every other -Prutter* flag here: irrelevant to a plain build and only consulted
- * once -PrutterSmoke has already put a provisioning task on the graph. The copy destination is
+ * @implNote Read inside each provisioning task's doLast, at execution time, so -PnyliumSmokeJar
+ * behaves like every other -Pnylium* flag here: irrelevant to a plain build and only consulted
+ * once -PnyliumSmoke has already put a provisioning task on the graph. The copy destination is
  * always renamed to the hand-rolled jar's own name, because ModLauncher9SmokeTest launches the
  * server with an explicit -cp naming that file, not a directory scan.
  */
 def resolveUniversalJar = {
-    project.hasProperty('rutterSmokeJar') ? new File(project.property('rutterSmokeJar') as String) : defaultUniversalJar.get().asFile
+    project.hasProperty('nyliumSmokeJar') ? new File(project.property('nyliumSmokeJar') as String) : defaultUniversalJar.get().asFile
 }
 
 /**
@@ -32,8 +32,8 @@ def java8 = javaLauncherFor(8)
 def java21 = javaLauncherFor(21)
 
 tasks.register('provisionFabricServers') {
-    onlyIf { project.hasProperty('rutterSmoke') } // dependants' onlyIf does not gate a dependency's own execution
-    dependsOn ':rutter-testmod:universalJar'
+    onlyIf { project.hasProperty('nyliumSmoke') } // dependants' onlyIf does not gate a dependency's own execution
+    dependsOn ':nylium-testmod:universalJar'
     doLast {
         String javaExecutable = java21.get().executablePath.asFile.absolutePath
         ['1.21.11', '1.21.10'].each { mcVersion ->
@@ -48,7 +48,7 @@ tasks.register('provisionFabricServers') {
             copy {
                 from resolveUniversalJar()
                 into new File(dir, 'mods')
-                rename { 'rutter-testmod-universal.jar' }
+                rename { 'nylium-testmod-universal.jar' }
             }
             new File(dir, 'eula.txt').text = 'eula=true\n'
 
@@ -106,8 +106,8 @@ def predownloadServerJar(File dir, String mcVersion, String javaExecutable) {
  * complete, so the smoke test itself only ever launches an already-installed server.
  */
 tasks.register('provisionForge1710') {
-    onlyIf { project.hasProperty('rutterSmoke') } // dependants' onlyIf does not gate a dependency's own execution
-    dependsOn ':rutter-testmod:universalJar'
+    onlyIf { project.hasProperty('nyliumSmoke') } // dependants' onlyIf does not gate a dependency's own execution
+    dependsOn ':nylium-testmod:universalJar'
     doLast {
         String forgeVersion = '1.7.10-10.13.4.1614-1.7.10'
         String installerUrl = "https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/forge-${forgeVersion}-installer.jar"
@@ -132,7 +132,7 @@ tasks.register('provisionForge1710') {
         copy {
             from resolveUniversalJar()
             into modsDir
-            rename { 'rutter-testmod-universal.jar' }
+            rename { 'nylium-testmod-universal.jar' }
         }
         new File(dir, 'eula.txt').text = 'eula=true\n'
     }
@@ -145,8 +145,8 @@ tasks.register('provisionForge1710') {
  * the fixed name the smoke test launches.
  */
 tasks.register('provisionForge1165') {
-    onlyIf { project.hasProperty('rutterSmoke') } // dependants' onlyIf does not gate a dependency's own execution
-    dependsOn ':rutter-testmod:universalJar'
+    onlyIf { project.hasProperty('nyliumSmoke') } // dependants' onlyIf does not gate a dependency's own execution
+    dependsOn ':nylium-testmod:universalJar'
     doLast {
         String forgeVersion = '1.16.5-36.2.34'
         String installerUrl = "https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/forge-${forgeVersion}-installer.jar"
@@ -170,7 +170,7 @@ tasks.register('provisionForge1165') {
         copy {
             from resolveUniversalJar()
             into modsDir
-            rename { 'rutter-testmod-universal.jar' }
+            rename { 'nylium-testmod-universal.jar' }
         }
         new File(dir, 'eula.txt').text = 'eula=true\n'
     }
@@ -187,8 +187,8 @@ tasks.register('provisionForge1165') {
  * of -jar.
  */
 tasks.register('provisionForge12111') {
-    onlyIf { project.hasProperty('rutterSmoke') } // dependants' onlyIf does not gate a dependency's own execution
-    dependsOn ':rutter-testmod:universalJar'
+    onlyIf { project.hasProperty('nyliumSmoke') } // dependants' onlyIf does not gate a dependency's own execution
+    dependsOn ':nylium-testmod:universalJar'
     doLast {
         String forgeVersion = '1.21.11-61.1.5'
         String installerUrl = "https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/forge-${forgeVersion}-installer.jar"
@@ -206,7 +206,7 @@ tasks.register('provisionForge12111') {
         copy {
             from resolveUniversalJar()
             into dir
-            rename { 'rutter-testmod-universal.jar' }
+            rename { 'nylium-testmod-universal.jar' }
         }
         new File(dir, 'eula.txt').text = 'eula=true\n'
     }
@@ -219,7 +219,7 @@ def resolveMixinJar() {
 }
 
 /**
- * @implNote Forge 1.7.10 predates ModLauncher and never bundles Mixin, so {@code RutterTweaker}'s
+ * @implNote Forge 1.7.10 predates ModLauncher and never bundles Mixin, so {@code NyliumTweaker}'s
  * {@code MixinBootstrap.init()} call needs Mixin on the server's classpath at runtime even though
  * it is compileOnly for the bootstrap module. Rather than hand-editing the installed universal
  * jar's own manifest, this writes a small launcher stub jar with the same Main-Class and a
@@ -274,7 +274,7 @@ def installForgeServer(File dir, File installer, String javaExecutable) {
  * its universalJar dependency, into the task graph at all.
  */
 def gateProvisioningIntoSmokeTest() {
-    if (project.hasProperty('rutterSmoke')) {
+    if (project.hasProperty('nyliumSmoke')) {
         tasks.named('test') {
             dependsOn tasks.named('provisionFabricServers')
             dependsOn tasks.named('provisionForge1710')
@@ -286,11 +286,11 @@ def gateProvisioningIntoSmokeTest() {
 gateProvisioningIntoSmokeTest()
 
 tasks.named('test') {
-    onlyIf { project.hasProperty('rutterSmoke') } // opt-in: downloads loader installers and launches servers
-    systemProperty 'rutter.smoke.servers', serversDir.get().asFile.absolutePath
+    onlyIf { project.hasProperty('nyliumSmoke') } // opt-in: downloads loader installers and launches servers
+    systemProperty 'nylium.smoke.servers', serversDir.get().asFile.absolutePath
     javaLauncher = java21
     doFirst {
-        systemProperty 'rutter.smoke.java.8', java8.get().executablePath.asFile.absolutePath
-        systemProperty 'rutter.smoke.java.21', java21.get().executablePath.asFile.absolutePath
+        systemProperty 'nylium.smoke.java.8', java8.get().executablePath.asFile.absolutePath
+        systemProperty 'nylium.smoke.java.21', java21.get().executablePath.asFile.absolutePath
     }
 }

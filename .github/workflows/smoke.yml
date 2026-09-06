@@ -12,5 +12,5 @@ jobs:
     with:
       java_version: '21'
       gradle_test: ':smoke:test'
-      gradle_args: '-PrutterSmoke'
+      gradle_args: '-PnyliumSmoke'
       timeout_minutes: 120

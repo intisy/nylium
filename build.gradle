@@ -1,20 +1,20 @@
-import io.github.intisy.rutter.gradle.ClassFileVersionTask
+import io.github.intisy.nylium.gradle.ClassFileVersionTask
 
 /**
- * @implNote These six are the artifacts {@code rutterUniversalJar} embeds, and the only ones a
- *     release actually publishes; {@code rutter-gradle} keeps its own {@code java-gradle-plugin}
- *     publication instead of a second one at the same coordinates, and {@code rutter-testmod}/
+ * @implNote These six are the artifacts {@code nyliumUniversalJar} embeds, and the only ones a
+ *     release actually publishes; {@code nylium-gradle} keeps its own {@code java-gradle-plugin}
+ *     publication instead of a second one at the same coordinates, and {@code nylium-testmod}/
  *     {@code smoke} are not release artifacts.
  */
-ext.embeddedArtifactPaths = [':rutter-api', ':rutter-core', ':rutter-bootstrap-fabric',
-                             ':rutter-bootstrap-launchwrapper', ':rutter-bootstrap-modlauncher8',
-                             ':rutter-bootstrap-modlauncher9']
+ext.embeddedArtifactPaths = [':nylium-api', ':nylium-core', ':nylium-bootstrap-fabric',
+                             ':nylium-bootstrap-launchwrapper', ':nylium-bootstrap-modlauncher8',
+                             ':nylium-bootstrap-modlauncher9']
 
 subprojects {
     apply plugin: 'java-library'
     apply plugin: 'maven-publish'
 
-    group = 'io.github.intisy.rutter'
+    group = 'io.github.intisy.nylium'
     version = rootProject.version
 
     repositories {
@@ -62,7 +62,7 @@ subprojects {
     publishing {
         repositories {
             maven {
-                name = 'rutterTest'
+                name = 'nyliumTest'
                 url = rootProject.layout.buildDirectory.dir('test-repo')
             }
         }

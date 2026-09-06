@@ -1,0 +1,75 @@
+plugins {
+    id 'java-gradle-plugin'
+}
+
+dependencies {
+    implementation project(':nylium-api')
+    implementation project(':nylium-core')
+
+    testImplementation gradleTestKit()
+    testImplementation 'com.google.code.gson:gson:2.10.1'
+}
+
+gradlePlugin {
+    plugins {
+        nylium {
+            id = 'io.github.intisy.nylium'
+            implementationClass = 'io.github.intisy.nylium.gradle.NyliumPlugin'
+        }
+    }
+}
+
+def versionFile = layout.buildDirectory.file('generated/nylium-version/nylium-gradle-version.properties')
+def versionProvider = providers.provider { project.version.toString() }
+
+/**
+ * @implNote The plugin resolves the embedded runtime pieces at its own version, so the version has
+ *     to reach it at execution time; a generated resource is the only channel that survives being
+ *     applied from a published jar.
+ */
+def writeNyliumVersion = tasks.register('writeNyliumVersion') {
+    inputs.property('version', versionProvider)
+    outputs.file(versionFile)
+    doLast {
+        def file = versionFile.get().asFile
+        file.parentFile.mkdirs()
+        file.setText("version=${versionProvider.get()}\n", 'UTF-8')
+    }
+}
+
+tasks.named('processResources') {
+    from(writeNyliumVersion)
+}
+
+def testRepository = rootProject.layout.buildDirectory.dir('test-repo')
+def testmodModules = project(':nylium-testmod').layout.buildDirectory.dir('modules')
+def testmodReferenceJar = project(':nylium-testmod').layout.buildDirectory
+        .file('universal/nylium-testmod-universal.jar')
+
+def subprojectsToPublish = rootProject.ext.embeddedArtifactPaths
+
+/**
+ * @implNote The differential gate reaches its reference material through system properties, which
+ *     are opaque strings to Gradle, so without these declarations the content of the reference jar
+ *     and the module jars is not a task input: editing either left {@code test} UP-TO-DATE and the
+ *     acceptance gate silently did not run. The test repository is deliberately not declared: the
+ *     publications are snapshots, so every publish writes a fresh timestamped artifact set and an
+ *     incrementing {@code maven-metadata.xml}, which could never match a previous snapshot.
+ */
+tasks.named('test') {
+    subprojectsToPublish.each { path ->
+        dependsOn "${path}:publishAllPublicationsToNyliumTestRepository"
+    }
+    dependsOn ':nylium-testmod:universalJar'
+
+    inputs.file(testmodReferenceJar)
+            .withPropertyName('nyliumReferenceJar')
+            .withPathSensitivity(PathSensitivity.NAME_ONLY)
+    inputs.dir(testmodModules)
+            .withPropertyName('nyliumModuleJars')
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    systemProperty 'nylium.test.repo', testRepository.get().asFile.absolutePath
+    systemProperty 'nylium.test.modules', testmodModules.get().asFile.absolutePath
+    systemProperty 'nylium.test.reference', testmodReferenceJar.get().asFile.absolutePath
+}
