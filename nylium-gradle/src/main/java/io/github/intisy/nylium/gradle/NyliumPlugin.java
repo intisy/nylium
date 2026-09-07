@@ -14,18 +14,9 @@ import org.gradle.api.tasks.TaskProvider;
 import org.gradle.jvm.tasks.Jar;
 
 import javax.inject.Inject;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 
 public class NyliumPlugin implements Plugin<Project> {
@@ -59,7 +50,7 @@ public class NyliumPlugin implements Plugin<Project> {
 
         final NyliumExtension nylium = project.getExtensions()
                 .create("nylium", NyliumExtension.class, project.getObjects());
-        final Configuration embed = embedConfiguration(project);
+        final Configuration embed = NyliumEmbed.configuration(project);
 
         final TaskProvider<Task> metadata = project.getTasks().register("nyliumMetadata", task -> {
             task.setGroup(TASK_GROUP);
@@ -102,7 +93,7 @@ public class NyliumPlugin implements Plugin<Project> {
             }
             List<ResolvedModule> modules = nylium.resolve();
             Set<PlatformId> platforms = platformUnion(modules);
-            addEmbedDependencies(evaluated, embed, platforms);
+            NyliumEmbed.addDependencies(evaluated, embed, platforms);
             List<GeneratedFile> generated = writers(evaluated, nylium, modules, platforms);
             metadata.configure(task -> {
                 for (GeneratedFile file : generated) {
@@ -122,44 +113,11 @@ public class NyliumPlugin implements Plugin<Project> {
                     }
                 });
             }
-            universalJar.configure(jar -> fillUniversalJar(jar, evaluated, embed, generated,
-                    modules, platforms, deduped, dedupe));
+            universalJar.configure(jar -> UniversalJarFactory.fill(jar, evaluated, embed, generated,
+                    modules, platforms, deduped, dedupe, archiveOperations));
             evaluated.getTasks().named(BasePlugin.ASSEMBLE_TASK_NAME)
                     .configure(assemble -> assemble.dependsOn(universalJar));
         });
-    }
-
-    private void fillUniversalJar(Jar jar, Project project, Configuration embed,
-                                  List<GeneratedFile> generated, List<ResolvedModule> modules,
-                                  Set<PlatformId> platforms, boolean deduped,
-                                  TaskProvider<NyliumDedupeTask> dedupe) {
-        embedInto(jar, project, embed);
-        for (GeneratedFile file : generated) {
-            jar.from(file.destination(), copy -> copy.into(file.parentDirectory()));
-        }
-        if (deduped) {
-            String path = modules.get(0).path();
-            addDedupedModules(jar, dedupe, path.substring(0, path.lastIndexOf('/')));
-        } else {
-            for (ResolvedModule module : modules) {
-                addModuleJar(jar, module);
-            }
-        }
-        if (platforms.contains(PlatformId.LAUNCHWRAPPER)) {
-            jar.getManifest().getAttributes().put("TweakClass",
-                    "io.github.intisy.nylium.bootstrap.launchwrapper.NyliumTweaker");
-        }
-    }
-
-    private static void addDedupedModules(Jar jar, TaskProvider<NyliumDedupeTask> dedupe,
-                                          String indexDirectory) {
-        jar.dependsOn(dedupe);
-        jar.from(dedupe.flatMap(NyliumDedupeTask::getOutputDirectory)
-                        .map(directory -> directory.dir(DedupeWriter.OBJECTS)),
-                copy -> copy.into("nylium/objects"));
-        jar.from(dedupe.flatMap(NyliumDedupeTask::getOutputDirectory)
-                        .map(directory -> directory.dir(DedupeWriter.INDEXES)),
-                copy -> copy.into(indexDirectory));
     }
 
     private static List<GeneratedFile> writers(Project project, NyliumExtension nylium,
@@ -186,37 +144,6 @@ public class NyliumPlugin implements Plugin<Project> {
         return generated;
     }
 
-    private static void addModuleJar(Jar jar, ResolvedModule module) {
-        final String path = module.path();
-        jar.from(module.jar(), copy -> {
-            copy.into(path.substring(0, path.lastIndexOf('/')));
-            copy.rename(".*", path.substring(path.lastIndexOf('/') + 1));
-        });
-    }
-
-    private void embedInto(Jar jar, Project project, Configuration embed) {
-        final ArchiveOperations archives = archiveOperations;
-        jar.from(project.provider(() -> {
-            List<Object> trees = new ArrayList<Object>();
-            for (File artifact : embed.getFiles()) {
-                trees.add(archives.zipTree(artifact));
-            }
-            return trees;
-        }), copy -> copy.exclude("META-INF/MANIFEST.MF", "META-INF/*.SF", "META-INF/*.DSA",
-                "META-INF/*.RSA", "META-INF/maven/**", "module-info.class"));
-    }
-
-    private static final Map<PlatformId, String> BOOTSTRAPS = bootstraps();
-
-    private static Map<PlatformId, String> bootstraps() {
-        Map<PlatformId, String> map = new EnumMap<PlatformId, String>(PlatformId.class);
-        map.put(PlatformId.FABRIC, "nylium-bootstrap-fabric");
-        map.put(PlatformId.LAUNCHWRAPPER, "nylium-bootstrap-launchwrapper");
-        map.put(PlatformId.MODLAUNCHER_8, "nylium-bootstrap-modlauncher8");
-        map.put(PlatformId.MODLAUNCHER_9, "nylium-bootstrap-modlauncher9");
-        return map;
-    }
-
     private static NyliumVerifyModulesTask.ModuleToVerify moduleToVerify(Project project,
                                                                         ResolvedModule module) {
         NyliumVerifyModulesTask.ModuleToVerify entry = project.getObjects()
@@ -235,55 +162,6 @@ public class NyliumPlugin implements Plugin<Project> {
         entry.getIndexFileName().set(path.substring(path.lastIndexOf('/') + 1));
         entry.getJar().set(module.jar());
         return entry;
-    }
-
-    private static Configuration embedConfiguration(Project project) {
-        Configuration embed = project.getConfigurations().maybeCreate("nyliumEmbed");
-        embed.setCanBeConsumed(false);
-        embed.setCanBeResolved(true);
-        return embed;
-    }
-
-    private static void addEmbedDependencies(Project project, Configuration embed,
-                                             Set<PlatformId> platforms) {
-        String version = pluginVersion();
-        addEmbed(project, embed, "nylium-api", version);
-        addEmbed(project, embed, "nylium-core", version);
-        for (PlatformId platform : platforms) {
-            String artifact = BOOTSTRAPS.get(platform);
-            if (artifact == null) {
-                throw new InvalidUserDataException(
-                        "No Nylium bootstrap exists for platform " + platform + ".");
-            }
-            addEmbed(project, embed, artifact, version);
-        }
-    }
-
-    private static void addEmbed(Project project, Configuration embed, String artifact,
-                                 String version) {
-        embed.getDependencies().add(project.getDependencies()
-                .create("io.github.intisy.nylium:" + artifact + ":" + version));
-    }
-
-    private static String pluginVersion() {
-        InputStream stream = NyliumPlugin.class.getResourceAsStream(
-                "/nylium-gradle-version.properties");
-        if (stream == null) {
-            throw new IllegalStateException(
-                    "nylium-gradle-version.properties is missing from the plugin jar");
-        }
-        Properties properties = new Properties();
-        try {
-            properties.load(new InputStreamReader(stream, StandardCharsets.UTF_8));
-            stream.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        String version = properties.getProperty("version");
-        if (version == null || version.trim().isEmpty()) {
-            throw new IllegalStateException("nylium-gradle-version.properties declares no version");
-        }
-        return version.trim();
     }
 
     /**
