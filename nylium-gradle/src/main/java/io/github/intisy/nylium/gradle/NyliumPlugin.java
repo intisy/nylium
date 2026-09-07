@@ -114,7 +114,7 @@ public class NyliumPlugin implements Plugin<Project> {
                     task.getModules().add(moduleToVerify(evaluated, module));
                 }
             });
-            boolean deduped = nylium.dedupeEnabled();
+            boolean deduped = modules.get(0).path().endsWith(".index");
             if (deduped) {
                 dedupe.configure(task -> {
                     for (ResolvedModule module : modules) {
@@ -138,7 +138,8 @@ public class NyliumPlugin implements Plugin<Project> {
             jar.from(file.destination(), copy -> copy.into(file.parentDirectory()));
         }
         if (deduped) {
-            addDedupedModules(jar, dedupe);
+            String path = modules.get(0).path();
+            addDedupedModules(jar, dedupe, path.substring(0, path.lastIndexOf('/')));
         } else {
             for (ResolvedModule module : modules) {
                 addModuleJar(jar, module);
@@ -150,14 +151,15 @@ public class NyliumPlugin implements Plugin<Project> {
         }
     }
 
-    private static void addDedupedModules(Jar jar, TaskProvider<NyliumDedupeTask> dedupe) {
+    private static void addDedupedModules(Jar jar, TaskProvider<NyliumDedupeTask> dedupe,
+                                          String indexDirectory) {
         jar.dependsOn(dedupe);
         jar.from(dedupe.flatMap(NyliumDedupeTask::getOutputDirectory)
                         .map(directory -> directory.dir(DedupeWriter.OBJECTS)),
                 copy -> copy.into("nylium/objects"));
         jar.from(dedupe.flatMap(NyliumDedupeTask::getOutputDirectory)
                         .map(directory -> directory.dir(DedupeWriter.INDEXES)),
-                copy -> copy.into("modules"));
+                copy -> copy.into(indexDirectory));
     }
 
     private static List<GeneratedFile> writers(Project project, NyliumExtension nylium,

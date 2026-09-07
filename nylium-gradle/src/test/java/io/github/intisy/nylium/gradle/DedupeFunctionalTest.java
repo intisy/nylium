@@ -37,14 +37,10 @@ class DedupeFunctionalTest {
     }
 
     /**
-     * @implNote 8 KB of fixed-seed random bytes, not a short literal. A stored blob's zip entry
-     *     name is "nylium/objects/" plus a 64 character sha256 hex digest, 79 characters, and zip
-     *     records that name twice, once in a 30 byte local file header and again in a 46 byte
-     *     central directory record, roughly 234 bytes of fixed overhead per distinct blob. A short
-     *     or compressible payload lets that overhead outweigh the one copy dedup avoids, and the
-     *     deduped jar comes out larger, not smaller. The fixed seed keeps the test deterministic;
-     *     deflate cannot shrink random bytes, so the payload's declared size is the size that
-     *     actually lands in the jar.
+     * @implNote A 79 character blob entry name costs roughly 234 bytes of fixed zip metadata, so
+     *     the payload has to be large enough for the one copy dedup avoids to beat that overhead,
+     *     and it has to resist deflate or compression erases the savings the assertion measures.
+     *     The fixed seed keeps the test deterministic.
      */
     private static byte[] sharedPayload() {
         byte[] payload = new byte[8192];
