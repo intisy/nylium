@@ -4,15 +4,21 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Properties;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 @Tag("conformance")
 class ConformanceSmokeTest {
@@ -136,5 +142,42 @@ class ConformanceSmokeTest {
         }
         assertCommonKeys(new ConformanceReport(new String(Files.readAllBytes(report),
                 StandardCharsets.UTF_8)), "modlauncher9", "modlauncher9", "reachable");
+    }
+
+    /**
+     * @implNote Reads the artifact rather than trusting -PnyliumConformanceDedupe's intent, because
+     *     Phase 0 and Phase 3 assert identical report keys and never otherwise inspect the jar, so a
+     *     mistyped property would silently turn the acceptance run back into the control with
+     *     nothing here to notice. The expectation itself comes from
+     *     {@code nylium.smoke.dedupe}, a system property smoke/build.gradle computes from the same
+     *     -PnyliumConformanceDedupe value and from {@code nylium.smoke.mod}, since a single module
+     *     is never deduped and testmod's hand-rolled build never uses the plugin's dedupe feature at
+     *     all.
+     */
+    @Test
+    void installedUniversalJarMatchesTheDedupeExpectation() throws Exception {
+        boolean dedupeExpected = Boolean.parseBoolean(System.getProperty("nylium.smoke.dedupe"));
+        Path jar = server("fabric-1.21.11").resolve("mods")
+                .resolve(System.getProperty("nylium.smoke.jarName", "nylium-conformance-universal.jar"));
+
+        List<String> modulePaths = new ArrayList<>();
+        try (JarFile file = new JarFile(jar.toFile())) {
+            JarEntry manifestEntry = file.getJarEntry("nylium-modules.properties");
+            Properties properties = new Properties();
+            try (InputStream in = file.getInputStream(manifestEntry)) {
+                properties.load(in);
+            }
+            for (String key : properties.stringPropertyNames()) {
+                if (key.endsWith(".path")) {
+                    modulePaths.add(properties.getProperty(key));
+                }
+            }
+        }
+
+        assertFalse(modulePaths.isEmpty(), "nylium-modules.properties named no module paths in " + jar);
+        for (String path : modulePaths) {
+            assertEquals(dedupeExpected, path.endsWith(".index"), "module path '" + path
+                    + "' does not match the dedupe expectation (dedupeExpected=" + dedupeExpected + ")");
+        }
     }
 }

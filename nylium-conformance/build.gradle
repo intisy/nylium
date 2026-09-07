@@ -78,8 +78,21 @@ def moduleJarFor = { String id ->
     tasks.named("moduleJar${safe(id)}").flatMap { it.archiveFile }
 }
 
+def conformanceDedupeProperty = providers.gradleProperty('nyliumConformanceDedupe').getOrElse('true')
+
+/**
+ * @implNote Any value but the exact string 'true' or 'false', including a typo such as 'False' or
+ * 'off', would otherwise silently mean dedupe is off, turning the Phase 3 acceptance run back into
+ * the Phase 0 control with no way for the tests to tell the difference. Same failure class as
+ * -PnyliumSmokeMod in smoke/build.gradle.
+ */
+if (!(conformanceDedupeProperty in ['true', 'false'])) {
+    throw new GradleException(
+            "-PnyliumConformanceDedupe must be 'true' or 'false', not '${conformanceDedupeProperty}'")
+}
+
 nylium {
-    dedupe = providers.gradleProperty('nyliumConformanceDedupe').getOrElse('true') == 'true'
+    dedupe = conformanceDedupeProperty == 'true'
 
     mod {
         id = 'nylium_conformance'

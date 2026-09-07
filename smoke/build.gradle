@@ -17,12 +17,31 @@ if (!(smokeMod in ['testmod', 'conformance'])) {
     throw new GradleException("-PnyliumSmokeMod must be 'testmod' or 'conformance', not '${smokeMod}'")
 }
 
+def conformanceDedupeProperty = providers.gradleProperty('nyliumConformanceDedupe').getOrElse('true')
+
 /**
- * @implNote Read inside each provisioning task's doLast, at execution time, so -PnyliumSmokeJar
- * behaves like every other -Pnylium* flag here: irrelevant to a plain build and only consulted
- * once -PnyliumSmoke has already put a provisioning task on the graph. The copy destination is
- * always renamed to the hand-rolled jar's own name, because ModLauncher9SmokeTest launches the
- * server with an explicit -cp naming that file, not a directory scan.
+ * @implNote Read independently of nylium-conformance/build.gradle's own identical validation, since
+ * this is a separate Gradle build: -PnyliumConformanceDedupe is a plain -P flag, visible to every
+ * project in whichever build it is passed to, not a value nylium-conformance can hand across the
+ * process boundary that GradleBuild crosses. Kept in sync with ConformanceSmokeTest's dedupe
+ * assertion, which reads the installed jar's manifest and compares it against this expectation,
+ * rather than trusting the property's intent.
+ */
+if (!(conformanceDedupeProperty in ['true', 'false'])) {
+    throw new GradleException(
+            "-PnyliumConformanceDedupe must be 'true' or 'false', not '${conformanceDedupeProperty}'")
+}
+
+def dedupeExpected = smokeMod == 'conformance' && conformanceDedupeProperty == 'true'
+
+/**
+ * @implNote Read inside each provisioning task's doLast, at execution time, so -PnyliumSmokeJar is
+ * irrelevant to a plain build and only consulted once -PnyliumSmoke has already put a provisioning
+ * task on the graph. Unlike -PnyliumSmokeMod and -PnyliumConformanceDedupe above, which are read
+ * and validated at configuration time on every invocation regardless of -PnyliumSmoke, so this note
+ * is scoped to -PnyliumSmokeJar specifically, not to "every -Pnylium* flag here". The copy
+ * destination is always renamed to the hand-rolled jar's own name, because ModLauncher9SmokeTest
+ * launches the server with an explicit -cp naming that file, not a directory scan.
  */
 def resolveUniversalJar = {
     if (project.hasProperty('nyliumSmokeJar')) {
@@ -332,6 +351,7 @@ tasks.named('test') {
     systemProperty 'nylium.smoke.servers', serversDir.get().asFile.absolutePath
     systemProperty 'nylium.smoke.mod', smokeMod
     systemProperty 'nylium.smoke.jarName', installedJarName
+    systemProperty 'nylium.smoke.dedupe', dedupeExpected.toString()
     javaLauncher = java21
     doFirst {
         systemProperty 'nylium.smoke.java.8', java8.get().executablePath.asFile.absolutePath
