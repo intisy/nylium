@@ -84,9 +84,7 @@ public final class ModuleIndex {
         try {
             String header = reader.readLine();
             if (!HEADER.equals(header)) {
-                throw new NyliumException("A Nylium module index has to start with '" + HEADER
-                        + "' but started with '" + header + "'. The jar was built by a newer"
-                        + " Nylium than the one loading it.");
+                throw new NyliumException(describeHeaderMismatch(header));
             }
             String line;
             int number = 1;
@@ -100,6 +98,34 @@ public final class ModuleIndex {
             throw new NyliumException("Could not read a Nylium module index", e);
         }
         return new ModuleIndex(parsed);
+    }
+
+    /**
+     * @implNote The plugin embeds {@code nylium-core} at exactly its own version, so the kernel
+     *     reading a jar is always the kernel that shipped with the plugin that wrote it: a newer
+     *     jar than the loading kernel cannot arise, and a truncated file yields a {@code null}
+     *     header rather than a version at all. Reporting the version actually found, when parseable,
+     *     is therefore more honest than asserting a cause that cannot happen.
+     */
+    private static String describeHeaderMismatch(String header) {
+        Integer found = parseVersion(header);
+        if (found != null) {
+            return "A Nylium module index has to start with '" + HEADER + "' but found version "
+                    + found + " instead.";
+        }
+        return "A Nylium module index has to start with '" + HEADER + "' but started with '"
+                + header + "'.";
+    }
+
+    private static Integer parseVersion(String header) {
+        if (header == null || !header.startsWith("# nylium-index ")) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(header.substring("# nylium-index ".length()).trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static Entry entry(String line, int number) {

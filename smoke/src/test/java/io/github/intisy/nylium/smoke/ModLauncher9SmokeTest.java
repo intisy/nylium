@@ -46,8 +46,8 @@ class ModLauncher9SmokeTest {
         Path mixinMarker = server.resolve("nylium-mixin-marker.txt");
         Files.deleteIfExists(marker);
 
-        String classpath = System.getProperty("nylium.smoke.jarName") + File.pathSeparator
-                + "forge-" + FORGE_VERSION + "-shim.jar";
+        String classpath = System.getProperty("nylium.smoke.jarName", "nylium-testmod-universal.jar")
+                + File.pathSeparator + "forge-" + FORGE_VERSION + "-shim.jar";
 
         String mixinResult = ServerSmokeHarness.run(server, Arrays.asList(
                 java21Executable(),
