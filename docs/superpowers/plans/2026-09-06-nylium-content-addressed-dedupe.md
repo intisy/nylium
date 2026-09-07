@@ -1892,6 +1892,7 @@ rootProject.name = 'nylium-conformance'
 
 ```groovy
 plugins {
+    id 'java'
     id 'io.github.intisy.nylium' version "${providers.gradleProperty('nyliumVersion').get()}"
 }
 
@@ -2082,8 +2083,14 @@ nylium {
     }
 }
 
+/**
+ * @implNote Both the name and the directory are pinned rather than left to a convention. Applying
+ * the java plugin can move a registered Jar task's default output between build/libs and
+ * build/distributions, and smoke/build.gradle reads this exact path.
+ */
 tasks.named('nyliumUniversalJar') {
     archiveFileName = 'nylium-conformance-universal.jar'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
 }
 ```
 
@@ -2171,17 +2178,19 @@ In `smoke/build.gradle`, every one of the four provisioning tasks copies the uni
  * entry in the shared services file, so the dead service booted and killed the JVM. The other three
  * raced past because the harness force-kills as soon as a marker appears.
  */
-def clearInstalledMods = { File directory ->
-    directory.listFiles()?.each { File file ->
+def clearInstalledMods = { File installDirectory, File serverDirectory ->
+    installDirectory.listFiles()?.each { File file ->
         if (file.name.startsWith('nylium-') && file.name.endsWith('.jar')) {
             file.delete()
         }
     }
-    new File(directory, 'nylium').deleteDir()
+    new File(serverDirectory, 'nylium').deleteDir()
 }
 ```
 
-Call `clearInstalledMods(modsDir)` immediately before each `copy` in `provisionFabricServers`, `provisionForge1710` and `provisionForge1165`, and `clearInstalledMods(dir)` before the copy in `provisionForge12111`.
+The two directories are separate on purpose. The jar is installed into `mods/` for Fabric, 1.7.10 and 1.16.5 but into the server directory itself for 1.21.11, whereas the kernel's extraction cache is always `<serverDirectory>/nylium`. Passing one directory for both would leave that cache in place on three of the four loaders, which is exactly the failure the handoff records as looking like a kernel regression.
+
+Call `clearInstalledMods(modsDir, dir)` immediately before each `copy` in `provisionFabricServers`, `provisionForge1710` and `provisionForge1165`, and `clearInstalledMods(dir, dir)` before the copy in `provisionForge12111`.
 
 - [ ] **Step 2: Make the installed jar and its name selectable**
 
@@ -2191,6 +2200,15 @@ Replace `resolveUniversalJar` and add a name resolver:
 def conformanceJar = file('../nylium-conformance/build/distributions/nylium-conformance-universal.jar')
 
 def smokeMod = providers.gradleProperty('nyliumSmokeMod').getOrElse('testmod')
+
+/**
+ * @implNote An unknown tag makes includeTags match nothing, so the matrix runs zero tests and
+ * reports BUILD SUCCESSFUL. Rejecting the value turns a silently green acceptance run into a named
+ * error.
+ */
+if (!(smokeMod in ['testmod', 'conformance'])) {
+    throw new GradleException("-PnyliumSmokeMod must be 'testmod' or 'conformance', not '${smokeMod}'")
+}
 
 def resolveUniversalJar = {
     if (project.hasProperty('nyliumSmokeJar')) {
