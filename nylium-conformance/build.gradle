@@ -73,3 +73,82 @@ moduleIds.each { id ->
         }
     }
 }
+
+def moduleJarFor = { String id ->
+    tasks.named("moduleJar${safe(id)}").flatMap { it.archiveFile }
+}
+
+nylium {
+    dedupe = providers.gradleProperty('nyliumConformanceDedupe').getOrElse('true') == 'true'
+
+    mod {
+        id = 'nylium_conformance'
+        name = 'Nylium Conformance'
+        version = '0.1.0'
+        environment = '*'
+        fabricLoaderVersion = '>=0.14.0'
+        modulePrefix = 'conformance'
+    }
+
+    module('fabric-1.21.11') {
+        jar = moduleJarFor('fabric-1.21.11')
+        platforms = ['FABRIC']
+        minecraft = '1.21.11'
+        entrypoint = 'io.github.intisy.nylium.conformance.ConformanceEntry'
+    }
+    module('fabric-1.21.11-alt') {
+        jar = moduleJarFor('fabric-1.21.11-alt')
+        platforms = ['FABRIC']
+        minecraft = '1.21.11'
+        priority = -1
+        entrypoint = 'io.github.intisy.nylium.conformance.ConformanceEntry'
+    }
+    module('fabric-1.21.11-client') {
+        jar = moduleJarFor('fabric-1.21.11-client')
+        platforms = ['FABRIC']
+        minecraft = '1.21.11'
+        environment = 'CLIENT'
+        entrypoint = 'io.github.intisy.nylium.conformance.ConformanceEntry'
+    }
+    module('fabric-1.21.10') {
+        jar = moduleJarFor('fabric-1.21.10')
+        platforms = ['FABRIC']
+        minecraft = '1.21.10'
+        entrypoint = 'io.github.intisy.nylium.conformance.ConformanceEntry'
+    }
+    module('fabric-broad') {
+        jar = moduleJarFor('fabric-broad')
+        platforms = ['FABRIC']
+        minecraft = '[1.14,1.22)'
+        entrypoint = 'io.github.intisy.nylium.conformance.ConformanceEntry'
+    }
+    module('launchwrapper') {
+        jar = moduleJarFor('launchwrapper')
+        platforms = ['LAUNCHWRAPPER']
+        minecraft = '[1.7,1.12.2]'
+        entrypoint = 'io.github.intisy.nylium.conformance.ConformanceEntry'
+    }
+    module('modlauncher8') {
+        jar = moduleJarFor('modlauncher8')
+        platforms = ['MODLAUNCHER_8']
+        minecraft = '[1.13,1.16.5]'
+        entrypoint = 'io.github.intisy.nylium.conformance.ConformanceEntry'
+    }
+    module('modlauncher9') {
+        jar = moduleJarFor('modlauncher9')
+        platforms = ['MODLAUNCHER_9']
+        minecraft = '1.21.11'
+        mixins = ['mixins.nylium-conformance.json']
+        entrypoint = 'io.github.intisy.nylium.conformance.ConformanceEntry'
+    }
+}
+
+/**
+ * @implNote Both the name and the directory are pinned rather than left to a convention. Applying
+ * the java plugin can move a registered Jar task's default output between build/libs and
+ * build/distributions, and smoke/build.gradle reads this exact path.
+ */
+tasks.named('nyliumUniversalJar') {
+    archiveFileName = 'nylium-conformance-universal.jar'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+}

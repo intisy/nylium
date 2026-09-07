@@ -75,3 +75,26 @@ subprojects {
         }
     }
 }
+
+def conformanceRepo = layout.buildDirectory.dir('test-repo')
+
+/**
+ * @implNote nylium-conformance is a separate build rather than a subproject because a Gradle plugin
+ * that lives in this build cannot be applied to a sibling subproject of it. Running it against the
+ * published plugin is the stronger arrangement anyway: it proves the artifact a consumer would
+ * actually resolve, not an in-build shortcut.
+ */
+tasks.register('conformanceUniversalJar', GradleBuild) {
+    group = 'nylium'
+    description = 'Builds the conformance universal jar with the published Nylium plugin.'
+    dependsOn project.ext.embeddedArtifactPaths.collect { "${it}:publishAllPublicationsToNyliumTestRepository" }
+    dependsOn ':nylium-gradle:publishAllPublicationsToNyliumTestRepository'
+    dir = file('nylium-conformance')
+    tasks = ['nyliumUniversalJar']
+    startParameter.projectProperties = [
+            nyliumRepo   : conformanceRepo.get().asFile.toURI().toString(),
+            nyliumVersion: project.version.toString(),
+            nyliumConformanceDedupe:
+                    providers.gradleProperty('nyliumConformanceDedupe').getOrElse('true')
+    ]
+}
