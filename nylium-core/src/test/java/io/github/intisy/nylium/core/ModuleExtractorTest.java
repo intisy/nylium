@@ -8,9 +8,15 @@ import java.io.ByteArrayOutputStream;
 import java.io.StringReader;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.jar.JarEntry;
+import java.util.jar.JarInputStream;
 import java.util.jar.JarOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -136,6 +142,90 @@ class ModuleExtractorTest {
             NyliumException thrown = assertThrows(NyliumException.class,
                     () -> extractor.extract(loader, descriptor("modules/")));
             assertTrue(thrown.getMessage().contains("modules/"), thrown.getMessage());
+        }
+    }
+
+    private static ClassLoader outerJarContaining(Path dir, Map<String, byte[]> entries)
+            throws Exception {
+        Files.createDirectories(dir);
+        Path outer = dir.resolve("outer.jar");
+        try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(outer))) {
+            for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+                jar.putNextEntry(new JarEntry(entry.getKey()));
+                jar.write(entry.getValue());
+                jar.closeEntry();
+            }
+        }
+        return new URLClassLoader(new URL[]{outer.toUri().toURL()}, null);
+    }
+
+    private static Map<String, byte[]> indexedModuleJar() {
+        byte[] alpha = "alpha".getBytes(StandardCharsets.UTF_8);
+        byte[] beta = "beta".getBytes(StandardCharsets.UTF_8);
+        String indexText = ModuleIndex.render(java.util.Arrays.asList(
+                ModuleIndex.Entry.file("one.txt", Sha256.hex(alpha)),
+                ModuleIndex.Entry.file("two.txt", Sha256.hex(beta))));
+        Map<String, byte[]> outer = new HashMap<String, byte[]>();
+        outer.put("modules/a.index", indexText.getBytes(StandardCharsets.UTF_8));
+        outer.put("nylium/objects/" + Sha256.hex(alpha), alpha);
+        outer.put("nylium/objects/" + Sha256.hex(beta), beta);
+        return outer;
+    }
+
+    private static List<String> entryNames(Path jarFile) throws Exception {
+        List<String> names = new ArrayList<String>();
+        try (JarInputStream jar = new JarInputStream(Files.newInputStream(jarFile))) {
+            JarEntry entry;
+            while ((entry = jar.getNextJarEntry()) != null) {
+                names.add(entry.getName());
+            }
+        }
+        return names;
+    }
+
+    @Test
+    void rebuildsAModuleDeclaredAsAnIndex(@TempDir Path dir) throws Exception {
+        try (URLClassLoader loader = (URLClassLoader) outerJarContaining(dir, indexedModuleJar())) {
+            ModuleExtractor extractor = new ModuleExtractor(dir.resolve("cache"));
+
+            Path extracted = extractor.extract(loader, descriptor("modules/a.index"));
+
+            assertTrue(Files.isRegularFile(extracted));
+            assertTrue(extracted.getFileName().toString().startsWith("a-"),
+                    extracted.getFileName().toString());
+            assertTrue(extracted.getFileName().toString().endsWith(".jar"),
+                    extracted.getFileName().toString());
+            assertEquals(java.util.Arrays.asList("one.txt", "two.txt"), entryNames(extracted));
+        }
+    }
+
+    @Test
+    void reusesAnAlreadyRebuiltIndexedModule(@TempDir Path dir) throws Exception {
+        try (URLClassLoader loader = (URLClassLoader) outerJarContaining(dir, indexedModuleJar())) {
+            ModuleExtractor extractor = new ModuleExtractor(dir.resolve("cache"));
+            ModuleDescriptor module = descriptor("modules/a.index");
+
+            Path first = extractor.extract(loader, module);
+            long stamp = Files.getLastModifiedTime(first).toMillis();
+            Path second = extractor.extract(loader, module);
+
+            assertEquals(first, second);
+            assertEquals(stamp, Files.getLastModifiedTime(second).toMillis());
+        }
+    }
+
+    @Test
+    void anIndexNamingAnAbsentObjectFailsClearly(@TempDir Path dir) throws Exception {
+        Map<String, byte[]> outer = indexedModuleJar();
+        outer.remove("nylium/objects/"
+                + Sha256.hex("alpha".getBytes(StandardCharsets.UTF_8)));
+        try (URLClassLoader loader = (URLClassLoader) outerJarContaining(dir, outer)) {
+            ModuleExtractor extractor = new ModuleExtractor(dir.resolve("cache"));
+
+            NyliumException thrown = assertThrows(NyliumException.class,
+                    () -> extractor.extract(loader, descriptor("modules/a.index")));
+
+            assertTrue(thrown.getMessage().contains("one.txt"), thrown.getMessage());
         }
     }
 }
