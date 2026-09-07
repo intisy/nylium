@@ -34,6 +34,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * eagerly touches the very class this transformer is transforming, that happens from inside that
  * class's own {@code transform()} call, before {@code LaunchClassLoader} has finished defining it;
  * that reentrant path is unexercised territory.
+ * @implNote the {@link MixinBootstrap#init()} call below registers a new transformer into the same
+ * {@code ArrayList} that {@code LaunchClassLoader.runTransformers} is currently iterating, for this
+ * same top-level class load, which crashes that load with {@code ConcurrentModificationException}
+ * and takes the whole server down. This is Nylium's known limitation 4; see the kernel design
+ * spec's limitation 4 for the measured stack and why it is deferred to its own spike rather than
+ * fixed here.
  */
 public final class NyliumBootTransformer implements IClassTransformer {
 

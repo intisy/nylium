@@ -78,8 +78,19 @@ entry name containing a newline is rejected at build time, named, rather than si
 the index.
 
 `module.N.path` in `nylium-modules.properties` points at either a `.jar`, today's shape, or a
-`.index`. There is deliberately no new manifest key: the extractor branches on the suffix, an old jar
-and a new jar are both readable, and the format stays self-describing.
+`.index`. There is deliberately no new manifest key: the extractor branches on the suffix. The
+plugin embeds `nylium-api` and `nylium-core` at exactly its own version, so the kernel reading a jar
+is always the kernel that shipped with the plugin that wrote it: new-kernel-plus-old-jar is the only
+reachable direction and it works, and old-kernel-plus-new-jar cannot arise. Lockstep embedding, not
+suffix dispatch, is the actual compatibility guarantee here; the real payoff of dispatching on the
+suffix is that `dedupe = false` needs no kernel change at all.
+
+The rebuild deliberately does not preserve every zip metadata a source module jar may have carried:
+entry timestamps (every rebuilt entry becomes 1980-01-01), the compression method (`STORED` becomes
+`DEFLATED`), extra fields, entry comments, and local-header ordering where it diverges from
+central-directory ordering. None of these carries meaning for a module jar built by this plugin.
+Signing is unaffected: a JAR signature digests uncompressed entry content, which the rebuild
+preserves exactly, never the compression method, timestamps or header order.
 
 ## Kernel changes
 
@@ -93,8 +104,11 @@ Confined to `ModuleExtractor`. `NyliumKernel.boot`, `ModuleSelector`, `ModuleMan
   cache, reusing the existing atomic-move handling including its Windows `AccessDeniedException`
   race case.
 - A missing blob raises a `NyliumException` naming both the entry and the hash.
-- No runtime hash verification. It would double the read cost to guard against a build bug that the
-  build-time reconstruct-and-compare gate catches for free.
+- No runtime hash verification. A blob's name IS its content hash, so a wrong blob is
+  unrepresentable: any resource found at `nylium/objects/<hash>` necessarily has that content, on
+  any loader, even when two Nylium-based mods share a classloader and `getResourceAsStream` resolves
+  the blob from the other jar's copy. The only reachable failure is a missing blob, which
+  `ModuleAssembler` already reports naming both the entry and the hash.
 
 ## Plugin changes
 
@@ -135,14 +149,18 @@ per feature instead of "a marker appeared":
 | --- | --- |
 | `module` | which module the kernel actually selected |
 | `entrypoint` | the entrypoint was invoked |
-| `sharedClass` | a class dedupe collapsed loaded and returned its constant |
+| `sharedClass` | a class dedupe collapsed actually loaded, rather than being folded away at compile time and never referenced |
 | `uniqueClass` | this module's unique source survived the merge |
 | `loader` | the platform, inferred from visible loader classes |
-| `mixin` | the ModLauncher 9 mixin config registered and applied |
 | `mcClass` | `reachable` or `unavailable`, per backend |
 
-`sharedClass` and `uniqueClass` together are the end-to-end proof of the merge: one says the
-collapsed blob was restored correctly, the other says per-module content survived.
+The ModLauncher 9 mixin config registering and applying is proved separately, by a `mixin` key in a
+different file, `nylium-conformance-mixin.properties`, not by a key in this report.
+
+`sharedClass` and `uniqueClass` prove dedupe restored the right content for the shared and the
+per-module case respectively. The merge's end-to-end proof is broader than these two keys alone:
+`ConformanceEntry`, `LoaderProbe`, `McClassProbe` and `ReportWriter` are themselves collapsed shared
+blobs, and this whole report existing at all is evidence they demonstrably executed.
 
 `mcClass` asserts the **known** state per backend rather than a uniform expectation: `reachable` on
 Fabric, LaunchWrapper and ModLauncher 9, `unavailable` on ModLauncher 8. Encoding limitation (1) as
@@ -160,9 +178,11 @@ the five-server matrix. This proves the mod before dedupe exists, so a later fai
 Skipping it means debugging the mod and the format at once.
 
 **Phase 1, kernel units.** Index round trip; rejection of an unknown header and of an entry name
-containing a newline; `ModuleExtractor` rebuilding a jar entry-for-entry equal to its source across a
-synthetic three-module overlapping set; a missing blob raising a named exception; the cache-hit path
-not rewriting.
+containing a newline; `ModuleExtractor` rebuilding a single module declared as an `.index` and
+asserting its entry names and order; a missing blob raising a named exception; the cache-hit path
+not rewriting. The stronger entry-for-entry-equal claim, same names in the same order with the same
+content, is covered separately, in `nylium-gradle`'s `DedupeWriterTest` against a two-module
+fixture, not here against a three-module one.
 
 **Phase 2, plugin functionals**, following the existing functional-test patterns including
 configuration cache and up-to-date behaviour. Object count equals distinct entry-content count; every

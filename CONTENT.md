@@ -244,8 +244,8 @@ Set `nylium { dedupe = false }` to restore whole, undeduped module jars, exactly
 produced before this feature existed. This is an intentional escape hatch: dedupe changes what
 happens on a module's first launch (a one-time rebuild, well under a second for a module of a
 few hundred entries), and a consumer hitting trouble in the field has a one-line route back to the
-simpler, previously proven shape. A single declared module is never deduped regardless of this
-setting, since an index would be pure indirection for it.
+simpler, previously proven shape. A single declared module is not deduped by default, since an
+index would be pure indirection for it, but `dedupe = true` forces it even then.
 
 Measured on the conformance mod that exercises every Nylium feature (8 modules, a handful of shared
 classes each): the deduped universal jar is about 24.8% smaller than the same declaration built

@@ -248,8 +248,27 @@ transformer into the same `ArrayList` that `LaunchClassLoader.runTransformers` i
 iterating, for that same top-level class load. The next iteration step throws
 `ConcurrentModificationException`, which surfaces to `LaunchClassLoader.findClass` and then to
 LaunchWrapper's own top-level `Launch.launch:131 -> Class.forName(MinecraftServer)` call as
-`ClassNotFoundException`. The full stack is in
-`smoke/build/servers/forge-1.7.10/smoke.log`. It reproduces identically with `nylium-testmod`,
+`ClassNotFoundException`. The decisive frames, quoted here because `smoke/build/servers/` is
+gitignored and does not survive a clean or a fresh checkout:
+
+```
+java.lang.ClassNotFoundException: net.minecraft.server.MinecraftServer
+    at net.minecraft.launchwrapper.LaunchClassLoader.findClass(LaunchClassLoader.java:191)
+    ...
+    at net.minecraft.launchwrapper.Launch.launch(Launch.java:131)
+Caused by: java.util.ConcurrentModificationException
+    at java.util.ArrayList$Itr.checkForComodification(ArrayList.java:911)
+    at java.util.ArrayList$Itr.next(ArrayList.java:861)
+    at net.minecraft.launchwrapper.LaunchClassLoader.runTransformers(LaunchClassLoader.java:278)
+    at net.minecraft.launchwrapper.LaunchClassLoader.findClass(LaunchClassLoader.java:176)
+```
+
+`Launch.launch:131` calls `Class.forName(MinecraftServer)`, which reaches
+`LaunchClassLoader.findClass:176`, which calls `runTransformers:278`, which fails inside
+`ArrayList$Itr.next` with `ConcurrentModificationException`; `findClass` wraps that as the
+`ClassNotFoundException` that `Launch.launch:131` ultimately sees. The full log, still present in
+this checkout at the time of writing, is at `smoke/build/servers/forge-1.7.10/smoke.log`, but that
+path is a pointer, not the record: it reproduces identically with `nylium-testmod`,
 whose entrypoint only writes a marker file and never loads or probes any class, which is the
 decisive evidence that this is independent of anything a module does; it is intrinsic to
 `NyliumBootTransformer` bootstrapping Mixin from inside its own `transform()` call.
