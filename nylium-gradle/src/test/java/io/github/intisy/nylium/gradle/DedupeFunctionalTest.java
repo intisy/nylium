@@ -2,6 +2,7 @@ package io.github.intisy.nylium.gradle;
 
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
+import org.gradle.testkit.runner.TaskOutcome;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -9,6 +10,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.Properties;
 import java.util.Random;
@@ -181,5 +183,108 @@ class DedupeFunctionalTest {
             properties.load(reader);
         }
         return properties;
+    }
+
+    @Test
+    void dedupesASingleModuleWhenForced() throws Exception {
+        moduleJar("modules/a.jar", "alpha");
+        Files.write(projectDir.resolve("settings.gradle"),
+                "rootProject.name = 'fixture'\n".getBytes(StandardCharsets.UTF_8));
+        String single = "plugins { id 'base'; id 'io.github.intisy.nylium' }\n"
+                + "repositories { maven { url = '"
+                + System.getProperty("nylium.test.repo").replace('\\', '/') + "' }; mavenCentral() }\n"
+                + "nylium {\n"
+                + "    dedupe = true\n"
+                + "    mod { id = 'demo'; version = '1.0.0'; modulePrefix = 'demo' }\n"
+                + "    module('1.21.11') {\n"
+                + "        jar = file('modules/a.jar')\n"
+                + "        platforms = ['FABRIC']\n"
+                + "        minecraft = '1.21.11'\n"
+                + "    }\n"
+                + "}\n";
+        Files.write(projectDir.resolve("build.gradle"), single.getBytes(StandardCharsets.UTF_8));
+
+        build();
+
+        try (JarFile jar = new JarFile(producedJar().toFile())) {
+            assertNotNull(jar.getJarEntry("modules/demo-1.21.11.index"), "index missing");
+            assertNull(jar.getJarEntry("modules/demo-1.21.11.jar"), "module jar still shipped");
+            assertEquals(2, countObjects(jar),
+                    "expected the shared entry plus the one unique entry");
+            Properties manifest = manifestOf(jar);
+            assertEquals("modules/demo-1.21.11.index", manifest.getProperty("module.0.path"));
+        }
+    }
+
+    private BuildResult buildWith(String... extraArguments) {
+        java.util.List<String> arguments = new java.util.ArrayList<String>(
+                Arrays.asList("nyliumUniversalJar", "--stacktrace"));
+        arguments.addAll(Arrays.asList(extraArguments));
+        return GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments(arguments)
+                .build();
+    }
+
+    @Test
+    void isUpToDateOnASecondBuildWithNoChanges() throws Exception {
+        fixture("");
+        build();
+
+        BuildResult second = build();
+
+        assertEquals(TaskOutcome.UP_TO_DATE, second.task(":nyliumDedupe").getOutcome());
+    }
+
+    @Test
+    void rerunsWhenAModuleJarChanges() throws Exception {
+        fixture("");
+        build();
+
+        moduleJar("modules/b.jar", "beta changed");
+        BuildResult second = build();
+
+        assertEquals(TaskOutcome.SUCCESS, second.task(":nyliumDedupe").getOutcome());
+    }
+
+    /**
+     * @implNote A dropped module's object would otherwise stay on disk and be copied into the jar,
+     *     naming content no index references. The task empties its output directory to prevent it.
+     */
+    @Test
+    void dropsTheObjectsOfAModuleThatWasRemoved() throws Exception {
+        fixture("");
+        build();
+
+        String single = "plugins { id 'base'; id 'io.github.intisy.nylium' }\n"
+                + "repositories { maven { url = '"
+                + System.getProperty("nylium.test.repo").replace('\\', '/') + "' }; mavenCentral() }\n"
+                + "nylium {\n"
+                + "    dedupe = true\n"
+                + "    mod { id = 'demo'; version = '1.0.0'; modulePrefix = 'demo' }\n"
+                + "    module('1.21.11') {\n"
+                + "        jar = file('modules/a.jar')\n"
+                + "        platforms = ['FABRIC']\n"
+                + "        minecraft = '1.21.11'\n"
+                + "    }\n"
+                + "}\n";
+        Files.write(projectDir.resolve("build.gradle"), single.getBytes(StandardCharsets.UTF_8));
+        build();
+
+        try (JarFile jar = new JarFile(producedJar().toFile())) {
+            assertEquals(2, countObjects(jar), "the removed module's unique object still shipped");
+            assertNull(jar.getJarEntry("modules/demo-1.21.10.index"), "stale index still shipped");
+        }
+    }
+
+    @Test
+    void worksUnderTheConfigurationCache() throws Exception {
+        fixture("");
+        buildWith("--configuration-cache");
+
+        BuildResult second = buildWith("--configuration-cache");
+
+        assertTrue(second.getOutput().contains("Reusing configuration cache"), second.getOutput());
     }
 }
