@@ -247,9 +247,41 @@ class-level measurement of 94.6% byte-identical compiled classes for this same p
 counted only compiled `.class` files; this one counts every jar entry, including resources,
 manifests and refmaps, which duplicate less consistently than compiled bytecode does).
 
-**Caveat carried over from the handoff:** 1.21.10 and 1.21.11 are adjacent versions, so this ratio
-is unusually favourable. A distant pair, such as 1.16.5 against 1.21.11, would show far less
-byte-identical content, and the mechanism's win would be correspondingly smaller. The measurement
+**The headline figure: how much smaller is the actual jar.** The entry-count ratio above answers
+"what fraction of entries are duplicates"; it does not by itself answer "how much smaller is the
+jar", which is the question the owner actually asked ("using Nylium I want no duplicate code for
+the versions"). That number is measurable today without SP-3, because the plugin consumes arbitrary
+pre-built module jars: a throwaway two-module consumer project (`plugins { id 'base'; id
+'io.github.intisy.nylium' version '0.1.0-SNAPSHOT' }`, a `repositories` block pointing at the root
+`build/test-repo`, and two `module(...)` blocks whose `jar = file(...)` pointed straight at
+Baritone's two built node jars, declared `FABRIC` with `minecraft = '1.21.10'` / `'1.21.11'` so the
+declaration validates; nothing is launched) built `nyliumUniversalJar` twice, once with
+`dedupe = false` and once with dedupe on (the default for two modules), from the same two node
+jars measured above. Built under a system temp directory, never inside either repository, and
+deleted after measuring.
+
+| Build | Universal jar size |
+| --- | --- |
+| Undeduped (`dedupe = false`) | 1,594,345 bytes |
+| Deduped (default) | 1,057,001 bytes |
+| **Difference** | **537,344 bytes, 33.7% smaller** |
+
+Both jars are zip-compressed by the same `nyliumUniversalJar` task, so this is the apples-to-apples
+comparison the raw object-store number above could not make. The deduped jar carries 494 distinct
+blobs (matching the object count measured directly with `DedupeWriter` above), and is **33.7%
+smaller** than the same declaration built with dedupe off. This is the number that directly answers
+the duplication question: a substantial, real reduction, consistent with 53.7% of entries collapsing
+against a per-blob overhead of roughly 234 bytes that is negligible next to Baritone's
+multi-kilobyte compiled classes. For reference, the two source node jars measured above total
+1,671,373 bytes combined; the deduped universal jar (1,057,001 bytes) is smaller than either
+individual node jar copied twice would be, and the undeduped universal jar (1,594,345 bytes) is
+close to, but not identical to, the two node jars' combined size, because the universal jar adds
+its own manifest and `fabric.mod.json` on top of the two embedded module jars.
+
+**Caveat carried over from the handoff, and applying to the 33.7% figure above too:** 1.21.10 and
+1.21.11 are adjacent versions, so this ratio is unusually favourable. A distant pair, such as 1.16.5
+against 1.21.11, would show far less byte-identical content, and the mechanism's win would be
+correspondingly smaller. The measurement
 above is real, but it is a best case, not a typical one.
 
 **The per-blob overhead floor.** Each distinct blob costs roughly 234 bytes of fixed zip metadata
