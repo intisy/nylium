@@ -287,8 +287,8 @@ above is real, but it is a best case, not a typical one.
 **The per-blob overhead floor.** Each distinct blob costs roughly 234 bytes of fixed zip metadata
 once it is packed into a real jar: a blob's entry name is `nylium/objects/` plus 64 hex characters,
 79 characters total, and zip stores the entry name twice, once in the 30-byte local file header and
-again in the 46-byte central directory header (`2 * (30 + 79) + 2 * (46 + 79)`, approximately
-234 bytes per distinct blob beyond its own content). This means the dedupe win scales with entry
+again in the 46-byte central directory header (`(30 + 79) + (46 + 79)`, 234 bytes per distinct blob
+beyond its own content). This means the dedupe win scales with entry
 size and duplication count: it is largest for large, highly duplicated entries (Baritone's compiled
 classes) and smallest, or even negative, for many small entries (the conformance mod's few tiny
 shared classes; see Task 5's ruling R11, where a fixture with a single 12-byte shared payload
