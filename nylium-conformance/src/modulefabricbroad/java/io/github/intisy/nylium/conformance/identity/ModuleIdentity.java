@@ -2,9 +2,15 @@ package io.github.intisy.nylium.conformance.identity;
 
 public final class ModuleIdentity {
 
-    public static final String ID = "fabric-broad";
+    private static final String ID_VALUE = "fabric-broad";
 
-    public static final String UNIQUE = "unique-fabric-broad";
+    public static String id() {
+        return ID_VALUE;
+    }
+
+    public static String unique() {
+        return "unique-" + ID_VALUE;
+    }
 
     private ModuleIdentity() {
     }

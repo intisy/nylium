@@ -15,10 +15,10 @@ public final class ConformanceEntry {
         if (target == null) {
             return;
         }
-        String report = "module=" + ModuleIdentity.ID + "\n"
+        String report = "module=" + ModuleIdentity.id() + "\n"
                 + "entrypoint=invoked\n"
                 + "sharedClass=" + SharedConstant.VALUE + "\n"
-                + "uniqueClass=" + ModuleIdentity.UNIQUE + "\n"
+                + "uniqueClass=" + ModuleIdentity.unique() + "\n"
                 + "loader=" + LoaderProbe.detect() + "\n"
                 + "mcClass=" + McClassProbe.state() + "\n";
         ReportWriter.write(Paths.get(target), report.getBytes(StandardCharsets.UTF_8));

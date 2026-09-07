@@ -2,9 +2,15 @@ package io.github.intisy.nylium.conformance.identity;
 
 public final class ModuleIdentity {
 
-    public static final String ID = "modlauncher8";
+    private static final String ID_VALUE = "modlauncher8";
 
-    public static final String UNIQUE = "unique-modlauncher8";
+    public static String id() {
+        return ID_VALUE;
+    }
+
+    public static String unique() {
+        return "unique-" + ID_VALUE;
+    }
 
     private ModuleIdentity() {
     }
