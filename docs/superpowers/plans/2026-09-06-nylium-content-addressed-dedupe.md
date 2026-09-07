@@ -1840,10 +1840,10 @@ public final class ConformanceEntry {
         if (target == null) {
             return;
         }
-        String report = "module=" + ModuleIdentity.ID + "\n"
+        String report = "module=" + ModuleIdentity.id() + "\n"
                 + "entrypoint=invoked\n"
                 + "sharedClass=" + SharedConstant.VALUE + "\n"
-                + "uniqueClass=" + ModuleIdentity.UNIQUE + "\n"
+                + "uniqueClass=" + ModuleIdentity.unique() + "\n"
                 + "loader=" + LoaderProbe.detect() + "\n"
                 + "mcClass=" + McClassProbe.state() + "\n";
         ReportWriter.write(Paths.get(target), report.getBytes(StandardCharsets.UTF_8));
@@ -1862,16 +1862,34 @@ Each file is this, with `<id>` replaced by the module id from the table:
 ```java
 package io.github.intisy.nylium.conformance.identity;
 
+/**
+ * @implNote The values are returned from methods rather than exposed as {@code public static final
+ *     String} constants. A {@code static final} field initialised from a string literal is a
+ *     compile-time constant, so javac inlines its value at every reference site. Since
+ *     {@code ConformanceEntry} lives in the shared {@code main} source set and compiles against the
+ *     {@code identityStub}, constants would bake "stub" into the one shared
+ *     {@code ConformanceEntry.class} that every module ships, and all eight modules would report
+ *     {@code module=stub} at runtime even though the stub is never packaged. A method call is
+ *     resolved against whichever class is actually on the classpath.
+ */
 public final class ModuleIdentity {
 
-    public static final String ID = "<id>";
+    private static final String ID_VALUE = "<id>";
 
-    public static final String UNIQUE = "unique-<id>";
+    public static String id() {
+        return ID_VALUE;
+    }
+
+    public static String unique() {
+        return "unique-" + ID_VALUE;
+    }
 
     private ModuleIdentity() {
     }
 }
 ```
+
+**This is not a style preference, it is the difference between a working mod and one that silently reports the wrong module.** Keeping the stub off the packaging classpath is necessary but not sufficient: the stub's *value* still leaks through constant folding at compile time. The `identityStub` file takes the identical shape with `ID_VALUE = "stub"`.
 
 - [ ] **Step 3: Write the standalone build**
 
@@ -2427,11 +2445,15 @@ This is the control the spec requires. It proves the conformance mod itself befo
 
 ```bash
 rm -rf smoke/build/servers/*/mods smoke/build/servers/forge-1.21.11/nylium-*.jar
-./gradlew conformanceUniversalJar -PnyliumConformanceDedupe=false
-./gradlew :smoke:test -PnyliumSmoke -PnyliumSmokeMod=conformance --rerun-tasks
+./gradlew :smoke:test -PnyliumSmoke -PnyliumSmokeMod=conformance \
+    -PnyliumConformanceDedupe=false --rerun-tasks
 ```
 
-Expected: 5 tests, 0 failures. **If this fails, the fault is in the conformance mod or the harness, never in dedupe**, because dedupe is off. Do not proceed to Step 6 until it is green.
+Expected: 5 tests, 0 failures. **If this fails, the fault is in the conformance mod or the harness, never in dedupe**, because dedupe is off.
+
+`-PnyliumConformanceDedupe=false` has to be on the run that provisions, not on a separate earlier invocation. Smoke provisioning depends on `:conformanceUniversalJar`, which is a `GradleBuild` task and therefore never up to date, so it re-runs during the smoke invocation and rebuilds the jar with whatever properties *that* invocation carries. Building the undeduped jar in one command and then running the matrix in another silently rebuilds it deduped, and the control run would quietly test the wrong artifact.
+
+Do not proceed to Step 6 until this is green.
 
 - [ ] **Step 6: Run the Phase 3 acceptance, with dedupe on**
 
