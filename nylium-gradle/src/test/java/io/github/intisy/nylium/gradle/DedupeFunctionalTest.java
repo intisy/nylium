@@ -81,6 +81,25 @@ class DedupeFunctionalTest {
         Files.write(projectDir.resolve("build.gradle"), script.getBytes(StandardCharsets.UTF_8));
     }
 
+    private void singleModuleFixture(String dedupeLine) throws IOException {
+        moduleJar("modules/a.jar", "alpha");
+        Files.write(projectDir.resolve("settings.gradle"),
+                "rootProject.name = 'fixture'\n".getBytes(StandardCharsets.UTF_8));
+        String script = "plugins { id 'base'; id 'io.github.intisy.nylium' }\n"
+                + "repositories { maven { url = '"
+                + System.getProperty("nylium.test.repo").replace('\\', '/') + "' }; mavenCentral() }\n"
+                + "nylium {\n"
+                + dedupeLine
+                + "    mod { id = 'demo'; version = '1.0.0'; modulePrefix = 'demo' }\n"
+                + "    module('1.21.11') {\n"
+                + "        jar = file('modules/a.jar')\n"
+                + "        platforms = ['FABRIC']\n"
+                + "        minecraft = '1.21.11'\n"
+                + "    }\n"
+                + "}\n";
+        Files.write(projectDir.resolve("build.gradle"), script.getBytes(StandardCharsets.UTF_8));
+    }
+
     private BuildResult build() {
         return GradleRunner.create()
                 .withProjectDir(projectDir.toFile())
@@ -124,21 +143,7 @@ class DedupeFunctionalTest {
 
     @Test
     void leavesASingleModuleUndedupedByDefault() throws Exception {
-        moduleJar("modules/a.jar", "alpha");
-        Files.write(projectDir.resolve("settings.gradle"),
-                "rootProject.name = 'fixture'\n".getBytes(StandardCharsets.UTF_8));
-        String single = "plugins { id 'base'; id 'io.github.intisy.nylium' }\n"
-                + "repositories { maven { url = '"
-                + System.getProperty("nylium.test.repo").replace('\\', '/') + "' }; mavenCentral() }\n"
-                + "nylium {\n"
-                + "    mod { id = 'demo'; version = '1.0.0'; modulePrefix = 'demo' }\n"
-                + "    module('1.21.11') {\n"
-                + "        jar = file('modules/a.jar')\n"
-                + "        platforms = ['FABRIC']\n"
-                + "        minecraft = '1.21.11'\n"
-                + "    }\n"
-                + "}\n";
-        Files.write(projectDir.resolve("build.gradle"), single.getBytes(StandardCharsets.UTF_8));
+        singleModuleFixture("");
 
         build();
 
@@ -187,22 +192,7 @@ class DedupeFunctionalTest {
 
     @Test
     void dedupesASingleModuleWhenForced() throws Exception {
-        moduleJar("modules/a.jar", "alpha");
-        Files.write(projectDir.resolve("settings.gradle"),
-                "rootProject.name = 'fixture'\n".getBytes(StandardCharsets.UTF_8));
-        String single = "plugins { id 'base'; id 'io.github.intisy.nylium' }\n"
-                + "repositories { maven { url = '"
-                + System.getProperty("nylium.test.repo").replace('\\', '/') + "' }; mavenCentral() }\n"
-                + "nylium {\n"
-                + "    dedupe = true\n"
-                + "    mod { id = 'demo'; version = '1.0.0'; modulePrefix = 'demo' }\n"
-                + "    module('1.21.11') {\n"
-                + "        jar = file('modules/a.jar')\n"
-                + "        platforms = ['FABRIC']\n"
-                + "        minecraft = '1.21.11'\n"
-                + "    }\n"
-                + "}\n";
-        Files.write(projectDir.resolve("build.gradle"), single.getBytes(StandardCharsets.UTF_8));
+        singleModuleFixture("    dedupe = true\n");
 
         build();
 
@@ -281,10 +271,12 @@ class DedupeFunctionalTest {
     @Test
     void worksUnderTheConfigurationCache() throws Exception {
         fixture("");
-        buildWith("--configuration-cache");
+        BuildResult first = buildWith("--configuration-cache");
+        assertTrue(first.getOutput().contains("Configuration cache entry stored"),
+                first.getOutput());
 
         BuildResult second = buildWith("--configuration-cache");
-
-        assertTrue(second.getOutput().contains("Reusing configuration cache"), second.getOutput());
+        assertTrue(second.getOutput().contains("Configuration cache entry reused"),
+                second.getOutput());
     }
 }
