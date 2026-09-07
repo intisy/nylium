@@ -1883,17 +1883,32 @@ pluginManagement {
         maven { url = providers.gradleProperty('nyliumRepo').get() }
         gradlePluginPortal()
     }
+    /**
+     * @implNote The plugins {} block in build.gradle only accepts a literal version string, never
+     *     an expression, so the nyliumVersion project property cannot be inlined there directly.
+     *     Resolving the version here instead is the documented workaround for a plugin version that
+     *     is only known as a Gradle property.
+     */
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == 'io.github.intisy.nylium') {
+                useVersion(providers.gradleProperty('nyliumVersion').get())
+            }
+        }
+    }
 }
 
 rootProject.name = 'nylium-conformance'
 ```
+
+The `resolutionStrategy` block is not optional. A `plugins { }` block accepts only a literal version, so `id 'io.github.intisy.nylium' version "${providers.gradleProperty('nyliumVersion').get()}"` fails to evaluate. The version has to be supplied here, and `build.gradle` then requests the plugin without one.
 
 `nylium-conformance/build.gradle`:
 
 ```groovy
 plugins {
     id 'java'
-    id 'io.github.intisy.nylium' version "${providers.gradleProperty('nyliumVersion').get()}"
+    id 'io.github.intisy.nylium'
 }
 
 repositories {
