@@ -230,6 +230,32 @@ not by itself break the module: one declaring `platforms = ['FABRIC', 'MODLAUNCH
 `NEOFORGE` is rejected by the plugin outright, at configuration time, because no NeoForge
 bootstrap exists yet.
 
+### Content-addressed dedupe
+
+With two or more declared modules, the plugin deduplicates entries across their module jars by
+default: every distinct entry (by content, not by name) is stored once, inside the universal jar,
+and each module becomes a small index naming which stored entries it needs. The kernel rebuilds a
+real module jar from that index into its extraction cache the first time a given module is
+selected, and reuses the cached jar on every later launch. The runtime shape is unchanged: one jar
+is put on the classpath exactly as before, so this is a storage optimisation, not a behaviour
+change.
+
+Set `nylium { dedupe = false }` to restore whole, undeduped module jars, exactly as the plugin
+produced before this feature existed. This is an intentional escape hatch: dedupe changes what
+happens on a module's first launch (a one-time rebuild, well under a second for a module of a
+few hundred entries), and a consumer hitting trouble in the field has a one-line route back to the
+simpler, previously proven shape. A single declared module is never deduped regardless of this
+setting, since an index would be pure indirection for it.
+
+Measured on the conformance mod that exercises every Nylium feature (8 modules, a handful of shared
+classes each): the deduped universal jar is about 24.8% smaller than the same declaration built
+undeduped. The saving scales with how much duplicate content a mod actually has and with entry
+size: each distinct stored entry carries a fixed overhead of roughly 234 bytes of zip metadata, so a
+module built from very many very small entries can grow rather than shrink under dedupe. Measured
+against a real multi-version Minecraft mod's compiled bytecode (adjacent Minecraft versions, where
+duplication is highest), roughly half of all jar entries were byte-identical between the two
+versions.
+
 ### What is derived, not written by hand
 
 A module's path inside the jar and its manifest index are both computed, not part of the DSL:
@@ -327,3 +353,9 @@ This is a working kernel with three documented gaps, not a finished product:
   built from the literal JVM classpath, not from Forge's own `mods/` folder scanning. The
   universal jar must currently be placed on the classpath directly (an explicit `-cp` plus the
   loader's shim main class) rather than dropped in as an ordinary mod.
+- **The LaunchWrapper backend (Forge 1.7.10 through 1.12.2) dispatches correctly and then the
+  server fails to launch.** `NyliumBootTransformer` bootstraps Mixin from inside its own transform
+  call, and Mixin registers a new transformer into the list LaunchWrapper's own class loader is
+  currently iterating, which crashes that load with a `ConcurrentModificationException`. This is
+  independent of what a module does: it reproduces with a module whose entrypoint only writes a
+  marker file. Fixing it needs its own spike.

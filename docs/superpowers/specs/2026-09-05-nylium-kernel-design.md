@@ -238,6 +238,37 @@ supplying a launch plugin of their own. A `mods/`-installable variant of this ba
 needs that mechanism instead, which also means it would need mod metadata this module deliberately
 omits today.
 
+**The LaunchWrapper backend dispatches correctly and then the server fails to launch. Recorded
+2026-09-06, found by the SP-2b conformance mod, measured on Forge 1.7.10.** This is a fourth
+limitation, distinct from the three above and more serious: the other three describe capability
+gaps a working server exposes; this one crashes the server.
+
+`NyliumBootTransformer.transform()` calls `MixinBootstrap.init()`, which registers a new
+transformer into the same `ArrayList` that `LaunchClassLoader.runTransformers` is currently
+iterating, for that same top-level class load. The next iteration step throws
+`ConcurrentModificationException`, which surfaces to `LaunchClassLoader.findClass` and then to
+LaunchWrapper's own top-level `Launch.launch:131 -> Class.forName(MinecraftServer)` call as
+`ClassNotFoundException`. The full stack is in
+`smoke/build/servers/forge-1.7.10/smoke.log`. It reproduces identically with `nylium-testmod`,
+whose entrypoint only writes a marker file and never loads or probes any class, which is the
+decisive evidence that this is independent of anything a module does; it is intrinsic to
+`NyliumBootTransformer` bootstrapping Mixin from inside its own `transform()` call.
+
+**It has always been this way, and the smoke harness structurally masks it.**
+`ServerSmokeHarness.run` returns the instant a module's marker file appears and force-kills the
+process, and every module's entrypoint writes its marker before this crash occurs later in the same
+top-level load. So every LaunchWrapper smoke run in this project's history has been green over a
+server that goes on to die, and the LaunchWrapper row of any acceptance matrix (including SP-2b's
+own) proves only that the module's entrypoint ran, not that the server continues to work
+afterwards.
+
+A fix is constrained by a fact already on record: `NyliumBootTransformer`'s own first `@implNote`
+states that bootstrapping Mixin earlier, in `injectIntoClassLoader`, "was observed to make that
+later tweaker's own transformer registration fail bytecode verification". The obvious alternative
+was already tried and failed for a different reason. This needs its own spike, of the same weight
+as the ModLauncher 9 and ModLauncher 8 spikes above, and is explicitly out of scope for SP-2b; see
+`2026-09-06-nylium-content-addressed-dedupe-design.md` for where it surfaced.
+
 **Verification status of the ModLauncher 9+ range.** Forge 1.21.x is verified against a real server
 (1.21.11-61.1.5). Forge 1.17 - 1.20.x is source-compatible and confirmed to compile at release 8,
 but was never run. Its `initializeLaunch` carries only the two-argument form, which is precisely

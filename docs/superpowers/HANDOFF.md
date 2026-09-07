@@ -25,6 +25,15 @@ broke.
 - Smoke matrix: `./gradlew :smoke:test -PnyliumSmoke`, optionally `-PnyliumSmokeJar=<abs path>` to
   test a specific universal jar. **Add `--rerun-tasks`**: with unchanged inputs the task reports
   `UP-TO-DATE` and launches no server, so a bare `BUILD SUCCESSFUL` proves nothing.
+- `nylium-conformance` is a separate Gradle build (its own `settings.gradle`, not a subproject of
+  the root build), driven by `./gradlew conformanceUniversalJar`, a root-level `GradleBuild` task
+  that invokes it as a nested build. It has to be separate because a Gradle plugin defined inside
+  a build cannot be applied to a sibling subproject of that same build; `nylium-conformance` applies
+  the published `io.github.intisy.nylium` plugin the same way any real external consumer would,
+  which is stronger evidence than testing the plugin against a subproject of its own build. It
+  exercises all four platforms, an adjacent-Fabric discrimination pair, an exact-versus-ranged
+  version constraint, a priority tie, a `CLIENT`-versus-`SERVER` module, and a ModLauncher 9 mixin,
+  across 8 declared modules.
 
 ## Read these, in this order
 
@@ -68,9 +77,9 @@ The Fabric pair is the load-bearing case: the same jar selecting a *different* m
 what proves dispatch rather than mere loading. `mixin=applied` comes from a real
 `@Mixin(targets="net.minecraft.server.Main")` whose injected callback ran.
 
-## Three known limitations, each needing its own spike
+## Four known limitations, each needing its own spike
 
-All three are documented in the design spec with the bytecode analysis behind them. None is a
+All four are documented in the kernel design spec with the bytecode analysis behind them. None is a
 silent bug; all are stated in `CONTENT.md` (the README source) too.
 
 1. **ModLauncher 8 dispatches but cannot reach Minecraft classes.** Its `ITransformationService` is
@@ -90,6 +99,22 @@ silent bug; all are stated in `CONTENT.md` (the README source) too.
    `onLoad`, only populating at `initialize`/`beginScanning`. Fixing it needs kernel boot moved to a
    later hook on two proven backends. CLIENT is unverified on *all* backends; no client smoke test
    exists anywhere.
+4. **The LaunchWrapper backend dispatches correctly and then the server fails to launch.** Found
+   2026-09-06 by the SP-2b conformance mod, measured on Forge 1.7.10. `NyliumBootTransformer`
+   bootstraps Mixin from inside its own `transform()` call, and `MixinBootstrap.init()` registers a
+   new transformer into the same `ArrayList` that `LaunchClassLoader.runTransformers` is currently
+   iterating, so LaunchWrapper's own subsequent top-level load of
+   `net.minecraft.server.MinecraftServer` dies with `ConcurrentModificationException`, surfacing as
+   `ClassNotFoundException`. Reproduces identically with `nylium-testmod`, whose entrypoint only
+   writes a marker file, so it is independent of anything a module does. **It has always been this
+   way, and the smoke harness structurally masks it**: the harness force-kills the process the
+   instant a module's marker appears, and every module's marker is written before this crash, so
+   every LaunchWrapper smoke run in this project's history has been green over a server that goes on
+   to die. This blocks LaunchWrapper, Forge 1.7.10 through 1.12.2, not just the conformance mod. A
+   fix is constrained: `NyliumBootTransformer`'s own first `@implNote` already records that
+   bootstrapping Mixin earlier was tried and made the tweaker's own transformer registration fail
+   bytecode verification. Needs its own spike; explicitly out of scope for SP-2b. See the kernel
+   design spec for the full stack and reasoning.
 
 ## Plan defects, so you do not repeat them
 
@@ -169,6 +194,28 @@ Each of these produced a green result that meant nothing, or nearly did.
   a JUnit XML matches the `failures="0"` attribute. Read the context, not the count.
 - **`grep -c` returning 0 exits non-zero** and will break a `&&` chain, skipping the command you
   actually cared about.
+- **The smoke matrix now takes `-PnyliumSmokeMod=conformance` (default `testmod`), and both mods'
+  tests are tagged (`@Tag("testmod")` / `@Tag("conformance")`).** `-PnyliumSmokeMod` is validated
+  fail-fast at configuration time (only `testmod` or `conformance` is accepted), but the tag itself
+  is not: `useJUnitPlatform { includeTags smokeMod }` with an unknown tag runs zero tests and
+  reports `BUILD SUCCESSFUL`, silently green over nothing. Always check the test count in the JUnit
+  XML, not just the exit code.
+- **A shared class reading a per-version compile-time constant silently bakes in the wrong value.**
+  `public static final String X = "..."` is a constant variable under JLS 4.12.4, so `javac` inlines
+  it at the reference site's own compile time. The conformance mod's shared entrypoint compiled once
+  against an identity stub, and every module reported the stub's value even though the stub was
+  never packaged; "nothing packages the stub" was true and did not matter, because the stub's value,
+  not its class file, leaked. Fix: return such values from methods, never expose them as constants.
+  This generalises to any shared-source-plus-per-version-overlay design, which is exactly Baritone's
+  Stonecutter pattern; see the content-addressed dedupe design spec's "Measured result" section.
+- **The smoke matrix can never exercise the dedupe cache-HIT path.** `clearInstalledMods` wipes each
+  server's extraction cache on every provisioning run, and provisioning is never up to date, so
+  every server the matrix boots does so cold. Do not read a passing acceptance run as evidence about
+  cache-hit behaviour; it says nothing about it either way.
+- **LaunchWrapper (Forge 1.7.10-1.12.2) crashes after correct dispatch; the smoke harness cannot
+  see it.** See "Four known limitations" above, limitation 4. The harness force-kills on marker
+  appearance, and the marker is written before the crash, so a green LaunchWrapper row has never
+  meant the server kept running.
 
 ## SP-2 items deliberately left undone
 
@@ -194,10 +241,18 @@ Per the program overview's ordering:
   entry to the hand-rolled reference, and the four-backend smoke matrix passes against the
   plugin-built jar. See `specs/2026-09-06-nylium-gradle-plugin-design.md`,
   `plans/2026-09-06-nylium-gradle-plugin.md` and its rulings file.
-- **SP-3 Baritone universal jar - this is what the owner originally asked for, and it is now
-  unblocked by SP-2.** Unblocked for
-  Fabric and Forge 1.17+; partially blocked on Forge 1.13-1.16 by limitation (1); blocked for
-  NeoForge until SP-1b.
+- **SP-2b content-addressed dedupe: DONE.** See "Candidate 1 is implemented" above. Proven on the
+  conformance mod's own jar and on Baritone's real bytecode (Task 10 measurement, recorded in the
+  design spec).
+- **SP-3 Baritone universal jar - this is what the owner originally asked for.** SP-2b removes one
+  blocker (per-version duplication now has a fix) but SP-3's own blocker is unchanged: each loader
+  still has to become a Stonecutter-versioned project before Baritone can produce one pre-remapped
+  module jar per Minecraft version in a single invocation. See the Baritone repo's own
+  `docs/superpowers/HANDOFF.md` for the spike findings on that blocker. Once unblocked: unblocked
+  for Fabric and Forge 1.17+; partially blocked on Forge 1.13-1.16 by limitation (1); blocked for
+  NeoForge until SP-1b; and now also blocked for LaunchWrapper, Forge 1.7.10 through 1.12.2, by the
+  newly discovered limitation (4) above ("Four known limitations"), which crashes the server rather
+  than merely limiting a module's capability.
 - **SP-1b** NeoForge backend - NeoForge ships no ModLauncher at all and needs a fifth bootstrap over
   its own `IModFileCandidateLocator`, behind its own spike.
 - **SP-1c** (implied, not yet specced) the ModLauncher 8 visibility spike from limitation (1).
@@ -206,7 +261,7 @@ Per the program overview's ordering:
 ## The duplication gap, and what it measures
 
 **Raised by the owner 2026-09-06: "using Nylium I want no duplicate code for the versions."**
-This is a real design limitation, not a packaging oversight, and it is the next thing to fix.
+This is a real design limitation, not a packaging oversight.
 
 `NyliumKernel.boot()` selects exactly ONE module, extracts it and classpaths it. There is no shared
 layer, so every module jar must be self-contained. A consumer targeting N Minecraft versions ships
@@ -230,21 +285,26 @@ did not change between adjacent versions. Note the caveat: 1.21.10 and 1.21.11 a
 identity is unusually high; 1.16.5 against 1.21.11 would be far lower. The mechanism is still
 correct, the ratio just varies per pair.
 
-### Two candidate designs, not yet chosen
+### Candidate 1 is implemented: SP-2b, content-addressed dedupe
 
-1. **Content-addressed dedupe in the Gradle plugin.** Hash every class entry across the N module
-   jars; any class byte-identical in 2+ modules moves to a shared jar and each module keeps only
-   what is unique. Manifest gains `shared.N.*` entries; the kernel classpaths matching shared
-   layers before the selected module. Provably safe (identical bytes are identical semantics),
-   needs no consumer declaration, and reuses the ASM machinery already in `ApiPurityScanner`.
-   Unproven risks: mixin targets must still resolve when the target class lives in the shared
-   layer, and classloader order must let a module override a shared class. Both are checkable on
-   the existing five-server smoke matrix.
-2. **SP-5 Minecraft facade plus SP-4 unified loader API.** The deeper fix: Baritone's 192
-   MC-touching files are per-version *only* because they name `net.minecraft` types directly. A
-   facade would let one source compile once. Much larger, and it attacks duplicate SOURCE rather
-   than duplicate BYTECODE.
+The owner picked candidate 1 below and it is done. See
+`docs/superpowers/specs/2026-09-06-nylium-content-addressed-dedupe-design.md` (the design, including
+the "Measured result" section with the Baritone and conformance-jar numbers) and
+`docs/superpowers/plans/2026-09-06-nylium-content-addressed-dedupe.md` (the executed plan). Every
+distinct entry across a mod's module jars is stored once in a content-addressed object store inside
+the universal jar; each module becomes an index; the kernel rebuilds a real jar in its extraction
+cache at first launch. Controlled by `nylium { dedupe = ... }`, on by default for two or more
+modules. Proven on real bytecode two ways: the conformance mod's own jar (24.8% smaller deduped)
+and Baritone's two built common nodes (measured in Task 10, see the design spec).
 
-These are complementary, not alternatives. (1) is self-contained, independently verifiable and
-blocked on nothing. (2) is the deeper answer and is a program in its own right. **The owner has not
-yet picked one.** Do not start either without settling that.
+Candidate 2, the SP-5 Minecraft facade plus SP-4 unified loader API, remains the deeper, still-open
+fix described below; it is a separate program and was not touched by this work.
+
+### Candidate 2, not started: the deeper fix
+
+**SP-5 Minecraft facade plus SP-4 unified loader API.** Baritone's 192 MC-touching files are
+per-version *only* because they name `net.minecraft` types directly. A facade would let one source
+compile once. Much larger than candidate 1, and it attacks duplicate SOURCE rather than duplicate
+BYTECODE. Complementary to candidate 1, not a replacement for it: candidate 1 collapses duplicate
+compiled output regardless of source shape, and this would reduce how much duplicate output there
+is to collapse in the first place.

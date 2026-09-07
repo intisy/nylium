@@ -205,6 +205,133 @@ since it reaches into another repo.
   ModLauncher 8, where `ServiceLoader` instantiates every entry in the shared services file. The
   `mods/` clear in Phase 3 is a prerequisite, not a nicety.
 
+## Measured result
+
+**Conformance jar (Task 8).** Deduped 78,217 bytes against undeduped 104,036 bytes, 24.8% smaller,
+17 objects across 8 modules. This is modest, and it should be: the conformance mod's shared source
+is a handful of small classes, so per-blob overhead (below) eats a real share of the win at this
+scale. Accepted as the honest figure for this mod rather than tuning the fixture to inflate it.
+
+**Baritone (Task 10, Step 1).** Both common Stonecutter nodes were built for real
+(`./gradlew :common:1.21.10:build :common:1.21.11:build`, both `BUILD SUCCESSFUL`) and the two
+node jars were measured directly with `DedupeWriter`, a throwaway test that is not part of this
+repository (it depends on another repo's build output and was deleted after the measurement):
+
+| Jar | Size | Entries (incl. directories) |
+| --- | --- | --- |
+| `common/versions/1.21.10` | 835,252 bytes | 533 |
+| `common/versions/1.21.11` | 836,121 bytes | 534 |
+| **Combined** | **1,671,373 bytes** | **1,067** |
+
+| Store | Value |
+| --- | --- |
+| Object store total (raw blobs on disk, uncompressed) | 1,961,552 bytes |
+| Distinct blobs (object count) | 494 |
+
+The object-store total is **larger** than the two jars combined, by about 17.4%
+(1,961,552 against 1,671,373). This is not a regression in the mechanism: the object store here is
+raw, uncompressed bytes on disk, while the two source jars are zip-deflated. Comparing an
+uncompressed store against two compressed jars understates dedupe and is not the number a real
+universal jar would ship at; a real build re-compresses the deduped blobs into the final jar the
+same way the conformance measurement above did, where the size comparison is apples to apples
+(deduped jar vs undeduped jar, both compressed the same way).
+
+The apples-to-apples figure the brief calls for is blob count against summed entry count: **494
+distinct blobs against 1,067 total entries**, meaning 46.3% of entries are unique content and the
+remaining 53.7% are duplicates that collapse to a shared blob. Of the 1,067 entries, 132 (66 per
+jar) are directory entries, which carry no content and therefore produce no blob regardless of
+dedupe; restricting the comparison to the 935 file entries gives 494 distinct blobs against 935
+file entries, 52.8% unique. Either way, roughly half of Baritone's per-version file content is
+byte-identical across these two adjacent versions, consistent with the handoff's earlier
+class-level measurement of 94.6% byte-identical compiled classes for this same pair (that number
+counted only compiled `.class` files; this one counts every jar entry, including resources,
+manifests and refmaps, which duplicate less consistently than compiled bytecode does).
+
+**Caveat carried over from the handoff:** 1.21.10 and 1.21.11 are adjacent versions, so this ratio
+is unusually favourable. A distant pair, such as 1.16.5 against 1.21.11, would show far less
+byte-identical content, and the mechanism's win would be correspondingly smaller. The measurement
+above is real, but it is a best case, not a typical one.
+
+**The per-blob overhead floor.** Each distinct blob costs roughly 234 bytes of fixed zip metadata
+once it is packed into a real jar: a blob's entry name is `nylium/objects/` plus 64 hex characters,
+79 characters total, and zip stores the entry name twice, once in the 30-byte local file header and
+again in the 46-byte central directory header (`2 * (30 + 79) + 2 * (46 + 79)`, approximately
+234 bytes per distinct blob beyond its own content). This means the dedupe win scales with entry
+size and duplication count: it is largest for large, highly duplicated entries (Baritone's compiled
+classes) and smallest, or even negative, for many small entries (the conformance mod's few tiny
+shared classes; see Task 5's ruling R11, where a fixture with a single 12-byte shared payload
+produced a deduped jar that was legitimately *larger* than the undeduped one, because three
+79-character blob names outweighed two tiny module jars). A module made of very many very small
+entries could grow rather than shrink under this scheme. The untaken mitigation is a shorter hash
+prefix with collision handling, which would shrink the per-blob overhead at the cost of needing a
+collision policy; this was not implemented and remains open.
+
+**The constant-folding trap, and why it generalises.** A shared class that reads a per-version
+compile-time constant silently bakes in the compile-time value rather than the runtime one.
+`public static final String ID = "..."` is a *constant variable* under JLS 4.12.4, so `javac`
+inlines its literal value at every reference site, at the referencing class's own compile time, not
+at the referenced class's. The conformance mod's shared `ConformanceEntry` (in `src/main/java`,
+compiled once and shipped to every module) read `ModuleIdentity.ID`/`ModuleIdentity.UNIQUE`, and
+because `main` compiles against the `identityStub` source set's identity stub, every module's
+compiled `ConformanceEntry.class` had the stub's literal values `"stub"`/`"unique-stub"` burned in,
+regardless of which module's real `ModuleIdentity` class was actually on the classpath at runtime.
+Every one of the five smoke servers reported `module=stub` even though the stub class was never
+packaged into any module jar; the earlier structural argument, "no `Jar` task reads the stub's
+output, so packaging is prevented by construction," was correct and insufficient, because the
+stub's *value*, not its class file, is what leaked. The fix is to return such values from methods
+(`ModuleIdentity.id()`, `ModuleIdentity.unique()`) rather than expose them as constants: a method
+call compiles to `invokestatic`, resolved against whichever class is actually on the classpath at
+call time, and cannot be folded.
+
+**This generalises to any consumer using shared source with per-version overlays, which is exactly
+Baritone's Stonecutter pattern.** Baritone's `common` source set is shared across Stonecutter
+version nodes with per-version overlay files providing the pieces that differ. Any shared class
+that reads a `public static final` constant from a per-version overlay class is exposed to the same
+trap: the shared class compiles once, against one node's overlay, and every other node's copy of
+that shared class silently keeps the first node's compile-time value. This is a hazard specific to
+shared-source-plus-overlay designs, not to Nylium's dedupe mechanism itself; dedupe only made it
+visible sooner, because it forces exactly one compiled copy where a Stonecutter build would
+otherwise generate one per node.
+
+**The acceptance evidence.** Phase 0 (dedupe off) and Phase 3 (dedupe on) both pass 5/5 across all
+five real Minecraft servers, and their report files are byte-for-byte identical across all five
+servers, verified by both `diff -q` and `sha256sum`. That equality is the core proof this design
+exists to produce: the jar dedupe rebuilds at extraction time is indistinguishable from a whole,
+undeduped module jar at runtime. Every module's dedicated blob-backed jar reassembles into an
+object containing its own distinct identity, not another module's.
+
+**The two cost measurements, labelled honestly as indicative rather than measured.** Both numbers
+are n=2 and hand-run outside Gradle, because the prescribed in-Gradle method proved unusable: the
+smoke harness's `clearInstalledMods` step (added to fix the stale-extraction-cache trap) deletes a
+server's entire `<serverDirectory>/nylium` cache directory, cache included, on every provisioning
+run, and provisioning is never up to date, so `:smoke:test` cannot isolate a genuine cache hit from
+a second cold run. To get an isolated measurement, the already-provisioned Fabric 1.21.11 server
+was launched directly with the harness's own toolchain and command line, bypassing Gradle (and
+therefore `clearInstalledMods`) entirely:
+
+- **First-launch rebuild cost:** roughly 200 to 650 ms at n=2 (two cold/warm pairs measured 222 ms
+  and 647 ms of difference respectively), well under a second as predicted.
+- **ModLauncher 9 blob-lookup overhead:** the 8-entry conformance module's ModLauncher 9 test took
+  about 13% longer wall time than the testmod's single-entry module on the same backend (14.84s
+  against 13.076s, a 1.76s difference on top of a 13+ second JVM/Forge boot), each measured once.
+
+**A limitation of the acceptance run itself: the smoke matrix can never exercise the dedupe
+cache-HIT path.** For the same reason the cost measurement above needed a workaround,
+`clearInstalledMods` wipes each server's extraction cache before every provisioning run, and
+provisioning always re-runs, so every server the matrix boots does so cold. Phase 0 and Phase 3
+both prove correctness on a cache miss; neither can prove anything about a cache hit's runtime
+behaviour, because the harness structurally cannot produce one.
+
+**The per-backend `mcClass` values, as measured** (whether the module could observe
+`net.minecraft.server.MinecraftServer` from the kernel's boot hook):
+
+| Backend | `mcClass` |
+| --- | --- |
+| Fabric (both 1.21.10 and 1.21.11) | `reachable` |
+| ModLauncher 9 | `reachable` |
+| ModLauncher 8 | `unavailable` (known limitation 1) |
+| LaunchWrapper | `unsafe-to-probe` (new limitation 4, see the kernel design spec) |
+
 ## Out of scope
 
 - Baritone's own universal jar. SP-3 stays blocked on making each loader a Stonecutter-versioned
