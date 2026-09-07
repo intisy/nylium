@@ -23,7 +23,7 @@ public final class ConformanceEntry {
         }
         String report = "module=" + ModuleIdentity.id() + "\n"
                 + "entrypoint=invoked\n"
-                + "sharedClass=" + SharedConstant.VALUE + "\n"
+                + "sharedClass=" + SharedConstant.value() + "\n"
                 + "uniqueClass=" + ModuleIdentity.unique() + "\n"
                 + "loader=" + LoaderProbe.detect() + "\n"
                 + "mcClass=" + McClassProbe.state() + "\n";
