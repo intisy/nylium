@@ -8,6 +8,7 @@ import org.gradle.api.Action;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.NamedDomainObjectContainer;
 import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.provider.Property;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -32,10 +33,13 @@ public class NyliumExtension {
      */
     private final List<String> moduleOrder = new ArrayList<String>();
 
+    private final Property<Boolean> dedupe;
+
     public NyliumExtension(ObjectFactory objects) {
         this.mod = objects.newInstance(ModSpec.class);
         this.modules = objects.domainObjectContainer(ModuleSpec.class);
         this.modules.whenObjectAdded(spec -> moduleOrder.add(spec.getName()));
+        this.dedupe = objects.property(Boolean.class);
     }
 
     public void mod(Action<? super ModSpec> action) {
@@ -52,6 +56,19 @@ public class NyliumExtension {
 
     public NamedDomainObjectContainer<ModuleSpec> getModules() {
         return modules;
+    }
+
+    /**
+     * Whether byte-identical entries shared by the module jars are stored once and each module
+     * shipped as an index. Defaults to on once a second module exists, and off for a single module,
+     * where an index is pure indirection.
+     */
+    public Property<Boolean> getDedupe() {
+        return dedupe;
+    }
+
+    boolean dedupeEnabled() {
+        return dedupe.getOrElse(modules.size() >= 2);
     }
 
     String modulePrefix() {
@@ -103,9 +120,10 @@ public class NyliumExtension {
             throw new InvalidUserDataException("Nylium tracked " + moduleOrder.size()
                     + " declared modules but the container holds " + modules.size() + ".");
         }
+        boolean deduped = dedupeEnabled();
         List<ResolvedModule> resolved = new ArrayList<ResolvedModule>();
         for (String name : moduleOrder) {
-            resolved.add(resolveOne(modules.getByName(name), prefix));
+            resolved.add(resolveOne(modules.getByName(name), prefix, deduped));
         }
         if (ResolvedModule.declaresFabric(resolved)) {
             requireFabricLegalId();
@@ -113,7 +131,7 @@ public class NyliumExtension {
         return resolved;
     }
 
-    private ResolvedModule resolveOne(ModuleSpec spec, String prefix) {
+    private ResolvedModule resolveOne(ModuleSpec spec, String prefix, boolean deduped) {
         String name = spec.getName();
         if (!spec.getJar().isPresent()) {
             throw new InvalidUserDataException("Nylium module '" + name
@@ -122,7 +140,8 @@ public class NyliumExtension {
         Set<PlatformId> platforms = Platforms.parse(name, spec.getPlatforms().get());
         String minecraft = required(spec.getMinecraft().getOrNull(), name, "minecraft");
         validateRange(name, minecraft);
-        return new ResolvedModule(name, "modules/" + prefix + "-" + name + ".jar", platforms,
+        String suffix = deduped ? ".index" : ".jar";
+        return new ResolvedModule(name, "modules/" + prefix + "-" + name + suffix, platforms,
                 minecraft, environment(name, spec.getEnvironment().getOrNull()),
                 spec.getMixins().get(), spec.getPriority().getOrElse(0),
                 emptyToNull(spec.getEntrypoint().getOrNull()), spec.getJar());

@@ -84,11 +84,20 @@ public class NyliumPlugin implements Plugin<Project> {
             jar.dependsOn(verify);
         });
 
+        final TaskProvider<NyliumDedupeTask> dedupe = project.getTasks().register(
+                "nyliumDedupe", NyliumDedupeTask.class, task -> {
+            task.setGroup(TASK_GROUP);
+            task.setDescription("Collapses byte-identical entries shared by the module jars.");
+            task.getOutputDirectory().set(
+                    project.getLayout().getBuildDirectory().dir("nylium/dedupe"));
+        });
+
         project.afterEvaluate(evaluated -> {
             if (nylium.getModules().isEmpty()) {
                 failWhenInvokedWithNoModules(metadata);
                 failWhenInvokedWithNoModules(verify);
                 failWhenInvokedWithNoModules(universalJar);
+                failWhenInvokedWithNoModules(dedupe);
                 return;
             }
             List<ResolvedModule> modules = nylium.resolve();
@@ -105,8 +114,16 @@ public class NyliumPlugin implements Plugin<Project> {
                     task.getModules().add(moduleToVerify(evaluated, module));
                 }
             });
+            boolean deduped = nylium.dedupeEnabled();
+            if (deduped) {
+                dedupe.configure(task -> {
+                    for (ResolvedModule module : modules) {
+                        task.getModules().add(moduleToDedupe(evaluated, module));
+                    }
+                });
+            }
             universalJar.configure(jar -> fillUniversalJar(jar, evaluated, embed, generated,
-                    modules, platforms));
+                    modules, platforms, deduped, dedupe));
             evaluated.getTasks().named(BasePlugin.ASSEMBLE_TASK_NAME)
                     .configure(assemble -> assemble.dependsOn(universalJar));
         });
@@ -114,18 +131,33 @@ public class NyliumPlugin implements Plugin<Project> {
 
     private void fillUniversalJar(Jar jar, Project project, Configuration embed,
                                   List<GeneratedFile> generated, List<ResolvedModule> modules,
-                                  Set<PlatformId> platforms) {
+                                  Set<PlatformId> platforms, boolean deduped,
+                                  TaskProvider<NyliumDedupeTask> dedupe) {
         embedInto(jar, project, embed);
         for (GeneratedFile file : generated) {
             jar.from(file.destination(), copy -> copy.into(file.parentDirectory()));
         }
-        for (ResolvedModule module : modules) {
-            addModuleJar(jar, module);
+        if (deduped) {
+            addDedupedModules(jar, dedupe);
+        } else {
+            for (ResolvedModule module : modules) {
+                addModuleJar(jar, module);
+            }
         }
         if (platforms.contains(PlatformId.LAUNCHWRAPPER)) {
             jar.getManifest().getAttributes().put("TweakClass",
                     "io.github.intisy.nylium.bootstrap.launchwrapper.NyliumTweaker");
         }
+    }
+
+    private static void addDedupedModules(Jar jar, TaskProvider<NyliumDedupeTask> dedupe) {
+        jar.dependsOn(dedupe);
+        jar.from(dedupe.flatMap(NyliumDedupeTask::getOutputDirectory)
+                        .map(directory -> directory.dir(DedupeWriter.OBJECTS)),
+                copy -> copy.into("nylium/objects"));
+        jar.from(dedupe.flatMap(NyliumDedupeTask::getOutputDirectory)
+                        .map(directory -> directory.dir(DedupeWriter.INDEXES)),
+                copy -> copy.into("modules"));
     }
 
     private static List<GeneratedFile> writers(Project project, NyliumExtension nylium,
@@ -189,6 +221,16 @@ public class NyliumPlugin implements Plugin<Project> {
                 .newInstance(NyliumVerifyModulesTask.ModuleToVerify.class);
         entry.getModuleName().set(module.name());
         entry.getMixins().set(module.mixins());
+        entry.getJar().set(module.jar());
+        return entry;
+    }
+
+    private static NyliumDedupeTask.ModuleToDedupe moduleToDedupe(Project project,
+                                                                 ResolvedModule module) {
+        NyliumDedupeTask.ModuleToDedupe entry = project.getObjects()
+                .newInstance(NyliumDedupeTask.ModuleToDedupe.class);
+        String path = module.path();
+        entry.getIndexFileName().set(path.substring(path.lastIndexOf('/') + 1));
         entry.getJar().set(module.jar());
         return entry;
     }

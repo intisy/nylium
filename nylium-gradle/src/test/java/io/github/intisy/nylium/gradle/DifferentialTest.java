@@ -258,11 +258,18 @@ class DifferentialTest {
         write(dir, "build.gradle", buildScript(modules, repo));
     }
 
+    /**
+     * @implNote Pins {@code dedupe = false}. This gate compares the plugin's output byte for byte
+     *     against {@code nylium-testmod}'s hand-rolled reference, which ships whole module jars, so
+     *     the two are only comparable with dedupe off. Turning it on here would not find a bug, it
+     *     would compare two different jar layouts.
+     */
     private static String buildScript(Path modules, Path repo) {
         return ""
                 + "plugins { id 'base'; id 'io.github.intisy.nylium' }\n"
                 + "repositories { maven { url = file('" + slashes(repo) + "') } }\n"
                 + "nylium {\n"
+                + "    dedupe = false\n"
                 + "    mod {\n"
                 + "        id = 'nylium_testmod'\n"
                 + "        name = 'Nylium Test Mod'\n"
