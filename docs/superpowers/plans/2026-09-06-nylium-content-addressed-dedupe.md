@@ -2127,7 +2127,7 @@ def conformanceRepo = layout.buildDirectory.dir('test-repo')
 tasks.register('conformanceUniversalJar', GradleBuild) {
     group = 'nylium'
     description = 'Builds the conformance universal jar with the published Nylium plugin.'
-    dependsOn ext.embeddedArtifactPaths.collect { "${it}:publishAllPublicationsToNyliumTestRepository" }
+    dependsOn project.ext.embeddedArtifactPaths.collect { "${it}:publishAllPublicationsToNyliumTestRepository" }
     dependsOn ':nylium-gradle:publishAllPublicationsToNyliumTestRepository'
     dir = file('nylium-conformance')
     tasks = ['nyliumUniversalJar']
