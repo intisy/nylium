@@ -1,5 +1,6 @@
 package io.github.intisy.nylium.smoke;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
@@ -9,6 +10,7 @@ import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tag("testmod")
 class FabricSmokeTest {
 
     private static final Duration TIMEOUT = Duration.ofMinutes(3);

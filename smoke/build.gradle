@@ -4,6 +4,19 @@ def serversDir = layout.buildDirectory.dir('servers')
 
 def defaultUniversalJar = project(':nylium-testmod').layout.buildDirectory.file('universal/nylium-testmod-universal.jar')
 
+def conformanceJar = file('../nylium-conformance/build/distributions/nylium-conformance-universal.jar')
+
+def smokeMod = providers.gradleProperty('nyliumSmokeMod').getOrElse('testmod')
+
+/**
+ * @implNote An unknown tag makes includeTags match nothing, so the matrix runs zero tests and
+ * reports BUILD SUCCESSFUL. Rejecting the value turns a silently green acceptance run into a named
+ * error.
+ */
+if (!(smokeMod in ['testmod', 'conformance'])) {
+    throw new GradleException("-PnyliumSmokeMod must be 'testmod' or 'conformance', not '${smokeMod}'")
+}
+
 /**
  * @implNote Read inside each provisioning task's doLast, at execution time, so -PnyliumSmokeJar
  * behaves like every other -Pnylium* flag here: irrelevant to a plain build and only consulted
@@ -12,8 +25,15 @@ def defaultUniversalJar = project(':nylium-testmod').layout.buildDirectory.file(
  * server with an explicit -cp naming that file, not a directory scan.
  */
 def resolveUniversalJar = {
-    project.hasProperty('nyliumSmokeJar') ? new File(project.property('nyliumSmokeJar') as String) : defaultUniversalJar.get().asFile
+    if (project.hasProperty('nyliumSmokeJar')) {
+        return new File(project.property('nyliumSmokeJar') as String)
+    }
+    return smokeMod == 'conformance' ? conformanceJar : defaultUniversalJar.get().asFile
 }
+
+def installedJarName = smokeMod == 'conformance'
+        ? 'nylium-conformance-universal.jar'
+        : 'nylium-testmod-universal.jar'
 
 /**
  * @implNote The ambient PATH "java" that runs a Gradle task's own actions is whatever launched the
@@ -31,9 +51,24 @@ def javaLauncherFor(int version) {
 def java8 = javaLauncherFor(8)
 def java21 = javaLauncherFor(21)
 
+/**
+ * @implNote The harness installs by file name, so a differently named jar does not replace an
+ * earlier one: the rename to Nylium once left two universal jars plus a stale extraction cache in
+ * every server directory. ModLauncher 8 failed hard on it, because ServiceLoader instantiates every
+ * entry in the shared services file, so the dead service booted and killed the JVM. The other three
+ * raced past because the harness force-kills as soon as a marker appears.
+ */
+def clearInstalledMods = { File installDirectory, File serverDirectory ->
+    installDirectory.listFiles()?.each { File file ->
+        if (file.name.startsWith('nylium-') && file.name.endsWith('.jar')) {
+            file.delete()
+        }
+    }
+    new File(serverDirectory, 'nylium').deleteDir()
+}
+
 tasks.register('provisionFabricServers') {
     onlyIf { project.hasProperty('nyliumSmoke') } // dependants' onlyIf does not gate a dependency's own execution
-    dependsOn ':nylium-testmod:universalJar'
     doLast {
         String javaExecutable = java21.get().executablePath.asFile.absolutePath
         ['1.21.11', '1.21.10'].each { mcVersion ->
@@ -44,11 +79,13 @@ tasks.register('provisionFabricServers') {
                 String url = "https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/0.16.9/1.0.1/server/jar"
                 launcher.withOutputStream { out -> new URL(url).withInputStream { out << it } }
             }
-            new File(dir, 'mods').mkdirs()
+            File modsDir = new File(dir, 'mods')
+            modsDir.mkdirs()
+            clearInstalledMods(modsDir, dir)
             copy {
                 from resolveUniversalJar()
-                into new File(dir, 'mods')
-                rename { 'nylium-testmod-universal.jar' }
+                into modsDir
+                rename { installedJarName }
             }
             new File(dir, 'eula.txt').text = 'eula=true\n'
 
@@ -107,7 +144,6 @@ def predownloadServerJar(File dir, String mcVersion, String javaExecutable) {
  */
 tasks.register('provisionForge1710') {
     onlyIf { project.hasProperty('nyliumSmoke') } // dependants' onlyIf does not gate a dependency's own execution
-    dependsOn ':nylium-testmod:universalJar'
     doLast {
         String forgeVersion = '1.7.10-10.13.4.1614-1.7.10'
         String installerUrl = "https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/forge-${forgeVersion}-installer.jar"
@@ -129,10 +165,11 @@ tasks.register('provisionForge1710') {
         }
         File modsDir = new File(dir, 'mods')
         modsDir.mkdirs()
+        clearInstalledMods(modsDir, dir)
         copy {
             from resolveUniversalJar()
             into modsDir
-            rename { 'nylium-testmod-universal.jar' }
+            rename { installedJarName }
         }
         new File(dir, 'eula.txt').text = 'eula=true\n'
     }
@@ -146,7 +183,6 @@ tasks.register('provisionForge1710') {
  */
 tasks.register('provisionForge1165') {
     onlyIf { project.hasProperty('nyliumSmoke') } // dependants' onlyIf does not gate a dependency's own execution
-    dependsOn ':nylium-testmod:universalJar'
     doLast {
         String forgeVersion = '1.16.5-36.2.34'
         String installerUrl = "https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/forge-${forgeVersion}-installer.jar"
@@ -167,10 +203,11 @@ tasks.register('provisionForge1165') {
         }
         File modsDir = new File(dir, 'mods')
         modsDir.mkdirs()
+        clearInstalledMods(modsDir, dir)
         copy {
             from resolveUniversalJar()
             into modsDir
-            rename { 'nylium-testmod-universal.jar' }
+            rename { installedJarName }
         }
         new File(dir, 'eula.txt').text = 'eula=true\n'
     }
@@ -188,7 +225,6 @@ tasks.register('provisionForge1165') {
  */
 tasks.register('provisionForge12111') {
     onlyIf { project.hasProperty('nyliumSmoke') } // dependants' onlyIf does not gate a dependency's own execution
-    dependsOn ':nylium-testmod:universalJar'
     doLast {
         String forgeVersion = '1.21.11-61.1.5'
         String installerUrl = "https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeVersion}/forge-${forgeVersion}-installer.jar"
@@ -203,10 +239,11 @@ tasks.register('provisionForge12111') {
                 throw new GradleException("Forge installer did not produce ${shimJar}")
             }
         }
+        clearInstalledMods(dir, dir)
         copy {
             from resolveUniversalJar()
             into dir
-            rename { 'nylium-testmod-universal.jar' }
+            rename { installedJarName }
         }
         new File(dir, 'eula.txt').text = 'eula=true\n'
     }
@@ -273,8 +310,13 @@ def installForgeServer(File dir, File installer, String javaExecutable) {
  * under the same condition keeps an ungated build from ever putting either provisioning task, or
  * its universalJar dependency, into the task graph at all.
  */
-def gateProvisioningIntoSmokeTest() {
+def gateProvisioningIntoSmokeTest(String smokeMod) {
     if (project.hasProperty('nyliumSmoke')) {
+        String universalJarTask = smokeMod == 'conformance' ? ':conformanceUniversalJar' : ':nylium-testmod:universalJar'
+        [tasks.named('provisionFabricServers'), tasks.named('provisionForge1710'),
+         tasks.named('provisionForge1165'), tasks.named('provisionForge12111')].each { provisioningTask ->
+            provisioningTask.configure { dependsOn universalJarTask }
+        }
         tasks.named('test') {
             dependsOn tasks.named('provisionFabricServers')
             dependsOn tasks.named('provisionForge1710')
@@ -283,14 +325,19 @@ def gateProvisioningIntoSmokeTest() {
         }
     }
 }
-gateProvisioningIntoSmokeTest()
+gateProvisioningIntoSmokeTest(smokeMod)
 
 tasks.named('test') {
     onlyIf { project.hasProperty('nyliumSmoke') } // opt-in: downloads loader installers and launches servers
     systemProperty 'nylium.smoke.servers', serversDir.get().asFile.absolutePath
+    systemProperty 'nylium.smoke.mod', smokeMod
+    systemProperty 'nylium.smoke.jarName', installedJarName
     javaLauncher = java21
     doFirst {
         systemProperty 'nylium.smoke.java.8', java8.get().executablePath.asFile.absolutePath
         systemProperty 'nylium.smoke.java.21', java21.get().executablePath.asFile.absolutePath
+    }
+    useJUnitPlatform {
+        includeTags smokeMod
     }
 }

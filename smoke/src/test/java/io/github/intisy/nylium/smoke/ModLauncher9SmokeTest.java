@@ -1,5 +1,6 @@
 package io.github.intisy.nylium.smoke;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -12,6 +13,7 @@ import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tag("testmod")
 class ModLauncher9SmokeTest {
 
     private static final String FORGE_VERSION = "1.21.11-61.1.5";
@@ -44,7 +46,7 @@ class ModLauncher9SmokeTest {
         Path mixinMarker = server.resolve("nylium-mixin-marker.txt");
         Files.deleteIfExists(marker);
 
-        String classpath = "nylium-testmod-universal.jar" + File.pathSeparator
+        String classpath = System.getProperty("nylium.smoke.jarName") + File.pathSeparator
                 + "forge-" + FORGE_VERSION + "-shim.jar";
 
         String mixinResult = ServerSmokeHarness.run(server, Arrays.asList(
