@@ -69,6 +69,15 @@ class ConformanceSmokeTest {
         assertCommonKeys(bootFabric("1.21.10"), "fabric-1.21.10", "fabric", "reachable");
     }
 
+    /**
+     * @implNote Asserts {@code mcClass=unsafe-to-probe}. On LaunchWrapper the module entrypoint
+     *     runs inside {@code NyliumBootTransformer.transform()} for the launch-target class, which
+     *     on a server is {@code net.minecraft.server.MinecraftServer} itself, so
+     *     {@code McClassProbe} refuses to probe that class by name rather than reentering
+     *     {@code LaunchClassLoader.findClass} for the class currently being defined. Whether a
+     *     LaunchWrapper module can reach game classes at all is an open question for its own spike,
+     *     not something this test tries to answer.
+     */
     @Test
     void dispatchesOnLaunchWrapper() throws Exception {
         Path directory = server("forge-1.7.10");
@@ -77,7 +86,7 @@ class ConformanceSmokeTest {
                 javaExecutable(8),
                 "-Dnylium.smoke.report=" + report.toAbsolutePath(),
                 "-jar", "forge-server.jar",
-                "nogui"), Duration.ofMinutes(3)), "launchwrapper", "launchwrapper", "reachable");
+                "nogui"), Duration.ofMinutes(3)), "launchwrapper", "launchwrapper", "unsafe-to-probe");
     }
 
     /**
