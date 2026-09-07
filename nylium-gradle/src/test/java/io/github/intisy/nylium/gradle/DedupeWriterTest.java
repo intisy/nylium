@@ -66,9 +66,9 @@ class DedupeWriterTest {
 
     private static Map<String, byte[]> moduleEntries(String unique) {
         Map<String, byte[]> entries = new LinkedHashMap<String, byte[]>();
+        entries.put("pkg/Zebra.class", utf8(unique));
         entries.put("pkg/", null);
-        entries.put("pkg/Shared.class", utf8("shared bytes"));
-        entries.put("pkg/Unique.class", utf8(unique));
+        entries.put("pkg/Apple.class", utf8("shared bytes"));
         return entries;
     }
 
@@ -119,6 +119,21 @@ class DedupeWriterTest {
                      Files.list(output.resolve(DedupeWriter.OBJECTS))) {
             assertEquals(0, stream.count());
         }
+    }
+
+    @Test
+    void succeeedsForEmptyJar(@TempDir Path dir) throws Exception {
+        Map<String, byte[]> empty = new LinkedHashMap<String, byte[]>();
+        Path jar = jarOf(dir.resolve("in"), "empty.jar", empty);
+        Path output = dir.resolve("out");
+
+        DedupeWriter.write(Arrays.asList(
+                new DedupeWriter.Source("empty.index", jar.toFile())), output);
+
+        Path indexFile = output.resolve(DedupeWriter.INDEXES).resolve("empty.index");
+        assertTrue(Files.isRegularFile(indexFile), "index file should exist");
+        ModuleIndex index = ModuleIndex.parse(Files.readAllBytes(indexFile));
+        assertEquals(0, index.entries().size(), "index should have zero entries");
     }
 
     private static void assertRebuilds(Path output, String indexName, Path original)

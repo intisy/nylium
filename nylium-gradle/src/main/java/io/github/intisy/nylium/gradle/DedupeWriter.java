@@ -46,6 +46,13 @@ final class DedupeWriter {
      *     hashes at boot.
      */
     static void write(List<Source> sources, Path outputDirectory) {
+        Set<String> indexFileNames = new HashSet<String>();
+        for (Source source : sources) {
+            if (!indexFileNames.add(source.indexFileName)) {
+                throw new IllegalArgumentException(
+                        "Duplicate index file name: " + source.indexFileName);
+            }
+        }
         Path objects = outputDirectory.resolve(OBJECTS);
         Path indexes = outputDirectory.resolve(INDEXES);
         try {
@@ -63,6 +70,10 @@ final class DedupeWriter {
         }
     }
 
+    /**
+     * @implNote JarFile.entries() walks the central directory, which defines the index order,
+     *     whereas JarInputStream would instead give local-header order; this order must be preserved.
+     */
     private static List<ModuleIndex.Entry> entriesOf(Source source, Path objects, Set<String> written)
             throws IOException {
         List<ModuleIndex.Entry> entries = new ArrayList<ModuleIndex.Entry>();
