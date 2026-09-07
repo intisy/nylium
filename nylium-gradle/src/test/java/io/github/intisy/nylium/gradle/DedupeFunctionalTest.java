@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Enumeration;
 import java.util.Properties;
+import java.util.Random;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
@@ -30,14 +31,30 @@ class DedupeFunctionalTest {
         Path jar = projectDir.resolve(name);
         Files.createDirectories(jar.getParent());
         try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(jar))) {
-            write(out, "pkg/Shared.class", "shared bytes");
-            write(out, "pkg/Unique.class", unique);
+            write(out, "pkg/Shared.class", sharedPayload());
+            write(out, "pkg/Unique.class", unique.getBytes(StandardCharsets.UTF_8));
         }
     }
 
-    private static void write(ZipOutputStream out, String entry, String content) throws IOException {
+    /**
+     * @implNote 8 KB of fixed-seed random bytes, not a short literal. A stored blob's zip entry
+     *     name is "nylium/objects/" plus a 64 character sha256 hex digest, 79 characters, and zip
+     *     records that name twice, once in a 30 byte local file header and again in a 46 byte
+     *     central directory record, roughly 234 bytes of fixed overhead per distinct blob. A short
+     *     or compressible payload lets that overhead outweigh the one copy dedup avoids, and the
+     *     deduped jar comes out larger, not smaller. The fixed seed keeps the test deterministic;
+     *     deflate cannot shrink random bytes, so the payload's declared size is the size that
+     *     actually lands in the jar.
+     */
+    private static byte[] sharedPayload() {
+        byte[] payload = new byte[8192];
+        new Random(20260906L).nextBytes(payload);
+        return payload;
+    }
+
+    private static void write(ZipOutputStream out, String entry, byte[] content) throws IOException {
         out.putNextEntry(new ZipEntry(entry));
-        out.write(content.getBytes(StandardCharsets.UTF_8));
+        out.write(content);
         out.closeEntry();
     }
 
