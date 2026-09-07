@@ -42,12 +42,27 @@ final class ModuleJarInspector {
         }
     }
 
+    /**
+     * @implNote A zip may legally hold two entries with the same name, and Gradle tooling does
+     *     produce them, but {@code DedupeWriter} would then hash whichever one {@code
+     *     ZipFile.getInputStream} resolves by name and {@code ModuleAssembler} would call {@code
+     *     JarOutputStream.putNextEntry} twice with that name and throw. Rejecting the duplicate here,
+     *     at build time, is the only way to catch it before a green build ships a jar the kernel
+     *     cannot assemble at game launch.
+     */
     private static Set<String> entries(String moduleName, File jar) {
         Set<String> names = new LinkedHashSet<String>();
         try (JarFile file = new JarFile(jar)) {
             Enumeration<JarEntry> enumeration = file.entries();
             while (enumeration.hasMoreElements()) {
-                names.add(enumeration.nextElement().getName());
+                String name = enumeration.nextElement().getName();
+                if (!names.add(name)) {
+                    throw new InvalidUserDataException("Nylium module '" + moduleName
+                            + "' contains the entry '" + name + "' twice. A jar can legally hold two"
+                            + " entries with the same name, but the kernel cannot assemble a dedupe"
+                            + " index built from one: it would try to write that entry name twice and"
+                            + " fail at game launch.");
+                }
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Nylium module '" + moduleName + "' has an unreadable jar "
