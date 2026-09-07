@@ -1,0 +1,21 @@
+pluginManagement {
+    repositories {
+        maven { url = providers.gradleProperty('nyliumRepo').get() }
+        gradlePluginPortal()
+    }
+    /**
+     * @implNote The plugins {} block in build.gradle only accepts a literal version string, never
+     *     an expression, so the nyliumVersion project property cannot be inlined there directly.
+     *     Resolving the version here instead is the documented workaround for a plugin version that
+     *     is only known as a Gradle property.
+     */
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == 'io.github.intisy.nylium') {
+                useVersion(providers.gradleProperty('nyliumVersion').get())
+            }
+        }
+    }
+}
+
+rootProject.name = 'nylium-conformance'

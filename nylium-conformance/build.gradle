@@ -1,0 +1,75 @@
+plugins {
+    id 'java'
+    id 'io.github.intisy.nylium'
+}
+
+repositories {
+    maven { url = providers.gradleProperty('nyliumRepo').get() }
+    mavenCentral()
+    maven { name = 'sponge'; url = 'https://repo.spongepowered.org/repository/maven-public/' }
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 8
+    options.compilerArgs << '-Xlint:-options'
+}
+
+dependencies {
+    compileOnly "io.github.intisy.nylium:nylium-api:${providers.gradleProperty('nyliumVersion').get()}"
+    compileOnly 'org.spongepowered:mixin:0.8.7'
+}
+
+/**
+ * @implNote Mixin's annotation processor auto-activates from the dependency and crashes without
+ * gson on the processor path; skipping it avoids pulling gson in for one smoke-test mixin. Same
+ * reason as nylium-testmod.
+ */
+tasks.named('compileJava') {
+    options.compilerArgs << '-proc:none'
+}
+
+sourceSets.create('identityStub') {
+    java {
+        srcDirs = ['src/identityStub/java']
+    }
+}
+
+sourceSets.main.compileClasspath += files(sourceSets.identityStub.output)
+
+def moduleIds = ['fabric-1.21.11', 'fabric-1.21.11-alt', 'fabric-1.21.11-client',
+                 'fabric-1.21.10', 'fabric-broad', 'launchwrapper', 'modlauncher8', 'modlauncher9']
+
+def safe = { String id -> id.replace('.', '').replace('-', '') }
+
+moduleIds.each { id ->
+    sourceSets.create("module${safe(id)}") {
+        java {
+            srcDirs = ["src/module${safe(id)}/java"]
+        }
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+    }
+    tasks.register("moduleJar${safe(id)}", Jar) {
+        archiveFileName = "conformance-${id}.jar"
+        destinationDirectory = layout.buildDirectory.dir('modules')
+        from sourceSets.main.output
+        from sourceSets."module${safe(id)}".output
+        if (id == 'modlauncher9') {
+            from(resources.text.fromString('''
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "io.github.intisy.nylium.conformance.mixin",
+  "target": "DEFAULT",
+  "mixins": ["ConformanceMl9Mixin"]
+}
+'''.trim())) {
+                rename '.*', 'mixins.nylium-conformance.json'
+            }
+        }
+    }
+}
