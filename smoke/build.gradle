@@ -310,9 +310,9 @@ def installForgeServer(File dir, File installer, String javaExecutable) {
  * under the same condition keeps an ungated build from ever putting either provisioning task, or
  * its universalJar dependency, into the task graph at all.
  */
-def gateProvisioningIntoSmokeTest(String smokeMod) {
+def gateProvisioningIntoSmokeTest(String selectedMod) {
     if (project.hasProperty('nyliumSmoke')) {
-        String universalJarTask = smokeMod == 'conformance' ? ':conformanceUniversalJar' : ':nylium-testmod:universalJar'
+        String universalJarTask = selectedMod == 'conformance' ? ':conformanceUniversalJar' : ':nylium-testmod:universalJar'
         [tasks.named('provisionFabricServers'), tasks.named('provisionForge1710'),
          tasks.named('provisionForge1165'), tasks.named('provisionForge12111')].each { provisioningTask ->
             provisioningTask.configure { dependsOn universalJarTask }

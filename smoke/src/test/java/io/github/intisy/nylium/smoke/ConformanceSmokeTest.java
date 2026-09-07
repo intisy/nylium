@@ -70,13 +70,16 @@ class ConformanceSmokeTest {
     }
 
     /**
-     * @implNote Asserts {@code mcClass=unsafe-to-probe}. On LaunchWrapper the module entrypoint
-     *     runs inside {@code NyliumBootTransformer.transform()} for the launch-target class, which
-     *     on a server is {@code net.minecraft.server.MinecraftServer} itself, so
-     *     {@code McClassProbe} refuses to probe that class by name rather than reentering
-     *     {@code LaunchClassLoader.findClass} for the class currently being defined. Whether a
-     *     LaunchWrapper module can reach game classes at all is an open question for its own spike,
-     *     not something this test tries to answer.
+     * @implNote Asserts {@code mcClass=unsafe-to-probe}. {@code McClassProbe} refuses to probe
+     *     game classes by name on LaunchWrapper because its own safety there cannot be shown, not
+     *     because probing is known to cause the server's own launch failure recorded in
+     *     {@code smoke/build/servers/forge-1.7.10/smoke.log} and this task's report: that failure
+     *     reproduces with {@code nylium-testmod}, whose entrypoint loads and probes nothing, and
+     *     traces instead to {@code MixinBootstrap.init()} registering a transformer into the same
+     *     {@code ArrayList} that {@code LaunchClassLoader.runTransformers} is iterating inside
+     *     {@code NyliumBootTransformer.transform()}. Whether a LaunchWrapper module can reach game
+     *     classes at all is an open question for its own spike, not something this test tries to
+     *     answer.
      */
     @Test
     void dispatchesOnLaunchWrapper() throws Exception {

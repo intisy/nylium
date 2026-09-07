@@ -9,7 +9,7 @@ public final class ModuleIdentity {
     }
 
     public static String unique() {
-        return "unique-" + ID_VALUE;
+        return "unique-modlauncher9";
     }
 
     private ModuleIdentity() {
