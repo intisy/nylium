@@ -244,15 +244,26 @@ Per the program overview's ordering:
 - **SP-2b content-addressed dedupe: DONE.** See "Candidate 1 is implemented" above. Proven on the
   conformance mod's own jar and on Baritone's real bytecode (Task 10 measurement, recorded in the
   design spec).
-- **SP-3 Baritone universal jar - this is what the owner originally asked for.** SP-2b removes one
-  blocker (per-version duplication now has a fix) but SP-3's own blocker is unchanged: each loader
-  still has to become a Stonecutter-versioned project before Baritone can produce one pre-remapped
-  module jar per Minecraft version in a single invocation. See the Baritone repo's own
-  `docs/superpowers/HANDOFF.md` for the spike findings on that blocker. Once unblocked: unblocked
-  for Fabric and Forge 1.17+; partially blocked on Forge 1.13-1.16 by limitation (1); blocked for
-  NeoForge until SP-1b; and now also blocked for LaunchWrapper, Forge 1.7.10 through 1.12.2, by the
-  newly discovered limitation (4) above ("Four known limitations"), which crashes the server rather
-  than merely limiting a module's capability.
+- **SP-3 Baritone universal jar: ASSEMBLED 2026-09-08, not yet run.** Its blocker is gone. Baritone's
+  loaders are now Stonecutter dimensions, so one `./gradlew build` produces seven remapped loader
+  jars across 1.21.10 and 1.21.11, and `:universal` turns four of them into a Nylium universal jar.
+  See the Baritone repo's `docs/superpowers/HANDOFF.md` and
+  `docs/superpowers/specs/2026-09-08-loader-stonecutter-nodes-design.md`.
+  **Baritone is therefore the second real consumer**, which is what the "Pending decisions" item
+  above was waiting for before `nylium-testmod`'s hand-rolled `universalJar` could be retired.
+  What the jar carries: Fabric on both versions and Forge on both versions, the latter declared as
+  `MODLAUNCHER_9`. What it deliberately omits, and why the coverage question is still open:
+  NeoForge is held back by SP-1b, and LaunchWrapper by limitation (4). Forge 1.13-1.16 remains
+  partially blocked by limitation (1), though Baritone has no node in that range yet.
+  **Dedupe measured 43.3 percent smaller on Baritone's real four-module jar** (7,039,630 bytes
+  undeduped against 3,991,203 deduped), beating the 24.8 percent from the conformance mod and the
+  33.7 percent from Baritone's two `common` node jars, because four whole loader jars share more.
+  Two useful confirmations for the plugin: `entrypoint` really is optional (Baritone declares none
+  and works purely through mixins), and a consumer project needs its OWN `repositories` block, since
+  `nyliumEmbed` resolves `nylium-api`, `nylium-core` and the bootstraps as Maven coordinates. That
+  is worth stating in the plugin's design doc; the current worked example does not show it.
+  **Nothing has been booted.** The jar is assembled and its manifest read back, but no server has
+  launched it, so this is not yet evidence that Baritone dispatches.
 - **SP-1b** NeoForge backend - NeoForge ships no ModLauncher at all and needs a fifth bootstrap over
   its own `IModFileCandidateLocator`, behind its own spike.
 - **SP-1c** (implied, not yet specced) the ModLauncher 8 visibility spike from limitation (1).
