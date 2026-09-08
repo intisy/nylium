@@ -2,14 +2,15 @@
 
 Design: `docs/superpowers/specs/2026-09-08-nylium-nested-jars-design.md`.
 
-Fixes known limitation 5. Read the design first; it records why the two obvious alternatives
-(hoisting into the outer `fabric.mod.json`, runtime scanning) were rejected, and the manifest
-compatibility consequence.
+Fixes known limitation 5, and **it is executed**. Read the design first, including its
+"Corrected while executing" section: the shape this plan was written against was withdrawn
+mid-execution, and runtime discovery, which the design first rejected, is what shipped. Hoisting
+into the outer `fabric.mod.json` stayed rejected.
 
 ## Global Constraints
 
-- Java 8 source level in `nylium-core` and `nylium-api`, as today. No lambdas or `var` in those
-  modules; the existing code uses anonymous classes for exactly this reason.
+- Java 8 language and API level in `nylium-core` and `nylium-api`, as today (`options.release = 8`).
+  Lambdas are fine and already used there; `var` and anything newer than 8 in the JDK API is not.
 - No new dependency in `nylium-core`. Nested extraction uses `java.util.zip`/`java.util.jar` only.
 - `nylium-api`'s `Platform` interface does NOT change. The whole point of the chosen shape is that
   the kernel stays platform-agnostic.
@@ -76,11 +77,14 @@ The design's key point: a module that bundles a nested jar without using it pass
       A single class with one static method, built as its own jar inside `nylium-conformance` and
       `include`d into one module, so no external coordinate is needed.
 - [x] **Step 2: Have that module's entrypoint call into it**
-      The entrypoint writes its marker only after calling the library's method, so an unreachable
-      nested jar means no marker, which is what the harness already asserts on.
+      Done through a `BundledJarProbe` in the shared `main` source set rather than by withholding
+      the marker, so a module that bundles nothing still reports a value and the failure surfaces as
+      an assertion diff instead of a timeout. The probe returns the library's own token, which
+      nothing short of that class loading and running can produce.
 - [x] **Step 3: Extend the conformance report**
-      Add a report key for the nested-jar module and assert it in `ConformanceSmokeTest`, so a
-      missing key fails rather than being silently absent.
+      A `bundledJar` key, asserted for **every** server in `assertCommonKeys`, not only the one
+      module that bundles a jar: `absent` everywhere else is what makes the single `bundled` mean
+      anything.
 - [x] **Step 4: Run the matrix**
       `./gradlew :smoke:test -PnyliumSmoke -PnyliumSmokeMod=conformance --rerun-tasks` with the
       markers deleted first. `--rerun-tasks` is not optional: with unchanged inputs the task reports
