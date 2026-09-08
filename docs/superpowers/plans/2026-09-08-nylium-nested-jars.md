@@ -24,57 +24,48 @@ compatibility consequence.
 - Baritone's Fabric module jars carry `META-INF/jars/nether-pathfinder-1.4.1.jar` (982,181 bytes)
   and zero flattened `dev/babbaj` classes.
 
-## Task 1: Declare nested jars in the manifest
+## Task 1: WITHDRAWN
 
-Files: `ModuleJarInspector`, `ResolvedModule`, `NyliumPlugin`, `ManifestRenderer`, `ModuleSpec` if
-its shape requires it.
+Task 1 declared nested jars in the manifest from the plugin. Withdrawn while executing it, because
+the manifest is rendered at configuration time from a plain `@Input` String and the module jars do
+not exist then. See "Corrected while executing: the kernel discovers" in the design for the full
+reasoning and for why the objections to runtime discovery turned out to be weak.
 
-- [ ] **Step 1: Record the current manifest for a module with a nested jar**
-      Build Baritone's universal jar, extract `nylium-modules.properties`, keep it as the before
-      image. Expect no `nested` key anywhere.
-- [ ] **Step 2: Have the inspector return nested jar names**
-      `ModuleJarInspector.entries` already builds the full entry set. Expose the
-      `META-INF/jars/*.jar` subset. Only direct children, not `META-INF/jars/a/b.jar`, since that
-      is not a shape `include` produces; reject a deeper one rather than silently ignoring it.
-- [ ] **Step 3: Carry the list into `ResolvedModule`**
-      Same treatment as `mixins`: unmodifiable list, empty by default.
-- [ ] **Step 4: Emit the `nested` key**
-      `ManifestRenderer`, guarded on non-empty exactly like `mixins`, comma-separated, stable order
-      (jar entry order, which is deterministic for a Gradle-built jar).
-- [ ] **Step 5: Validate declared against present**
-      Reject a declared nested jar absent from the module jar, with the same message shape as the
-      missing-mixin-config error.
-- [ ] **Step 6: Confirm the manifest changed as intended**
-      Rebuild Baritone's universal jar, extract the manifest, diff against Step 1. Expect exactly
-      two new lines, one per Fabric module, and none for the Forge modules.
-- [ ] **Step 7: Commit**
+The one part worth keeping was its Step 1, the before image: Baritone's current
+`nylium-modules.properties` carries 16 lines, four modules of four keys, and no `nested` key. Under
+the corrected design that file is expected to stay **byte-identical**, which is now a check in
+Task 4 rather than a diff to inspect here.
 
-## Task 2: Extract nested jars and put them on the classpath
+Nothing in `nylium-gradle` changes.
 
-Files: `ModuleManifest`, `ModuleDescriptor`, `ModuleExtractor`, `NyliumKernel`.
+## Task 2: Discover, extract and classpath a module's nested jars
 
-- [ ] **Step 1: Parse the `nested` field**
-      `readModule` consumes `prefix + "nested"` through the existing `split(value(...))` pair so the
-      unknown-key validator keeps working. `ModuleDescriptor` gains `nestedJars()` returning an
-      unmodifiable list.
-- [ ] **Step 2: Reject an empty or traversing entry**
-      A `nested` entry of `..`, an absolute path, or one containing a separator must fail loudly.
-      `ModuleExtractor.fileName` already guards the module path this way; nested entries need the
-      same treatment, since the value ends up as a file name in the cache directory.
-- [ ] **Step 3: Extract a nested entry**
-      New method on `ModuleExtractor` taking the already-extracted module jar and an entry name,
-      reusing `landInPlace` and the `<name>-<sha16>.jar` naming. Read the entry with `JarFile`
-      rather than streaming the whole module through `ZipInputStream`.
+Files: `ModuleExtractor`, `NyliumKernel`. Neither `ModuleManifest` nor `ModuleDescriptor` changes.
+
+- [ ] **Step 1: List a module jar's nested entries**
+      New method reading the already-extracted module jar and returning its direct
+      `META-INF/jars/*.jar` entry names, sorted for determinism. Only direct children: a deeper
+      `META-INF/jars/a/b.jar` is not a shape `include` produces, so treat it as a hard error rather
+      than silently ignoring it.
+- [ ] **Step 2: Extract one nested entry**
+      Reuse `landInPlace` and the `<name>-<sha16>.jar` naming so the atomic-move race handling and
+      content addressing are not reimplemented, and an unchanged nested jar is extracted once
+      across launches. Read the entry with `JarFile`, not by streaming the module through
+      `ZipInputStream`.
+- [ ] **Step 3: Guard the cache file name**
+      The entry name becomes a file name in the cache directory, so apply the same rejection
+      `ModuleExtractor.fileName` already applies to a module path: no empty base, no `.` or `..`.
+      A zip entry can legally carry `..`, so this is not theoretical.
 - [ ] **Step 4: Wire it into boot**
-      In `NyliumKernel.boot`, after `platform.addToClasspath(extracted)`, extract each nested entry
-      and add it too. Must happen before `whenModuleLoadable`, so ordering is not incidental: state
-      it in a comment only if the code cannot make it obvious.
-- [ ] **Step 5: Fail with a useful message**
-      A declared nested entry missing from the module jar at runtime should name the module and the
-      entry, in the style of the existing "manifest names module X but no such entry exists".
-- [ ] **Step 6: Unit tests**
-      Manifest parses `nested` and rejects a traversing value; extraction produces a real jar,
-      is idempotent on a second call, and an unchanged nested jar keeps its cache name.
+      In `NyliumKernel.boot`, after `platform.addToClasspath(extracted)`, add each nested jar too.
+      It must happen before `whenModuleLoadable` so the classes exist before any mixin or entrypoint
+      runs; keep that ordering evident in the code rather than commented.
+- [ ] **Step 5: Unit tests**
+      A module jar with a nested jar yields it; one without yields nothing; extraction produces a
+      readable jar whose content matches the nested bytes; a second call is idempotent and keeps the
+      same cache name; a nested entry under a subdirectory is rejected; a `..` entry is rejected.
+- [ ] **Step 6: Confirm the whole build is still green**
+      `./gradlew build --offline`, expecting `:smoke:test SKIPPED`.
 - [ ] **Step 7: Commit**
 
 ## Task 3: Prove it in the conformance mod
@@ -106,8 +97,10 @@ The design's key point: a module that bundles a nested jar without using it pass
 - [ ] **Step 2: Rebuild Baritone's universal jar**
       Note Baritone now sets `org.gradle.configureondemand=true`, and that a whole-tree
       configuration does not fit in this machine's memory; build the loader nodes individually.
-- [ ] **Step 3: Confirm the module manifest carries `nested`**
-      Read `nylium-modules.properties` out of the rebuilt jar.
+- [ ] **Step 3: Confirm the module manifest is unchanged**
+      Read `nylium-modules.properties` out of the rebuilt jar and expect it byte-identical to
+      Task 1's before image: 16 lines, no `nested` key. The corrected design changes no wire
+      format, so a difference here means something unintended moved.
 - [ ] **Step 4: Boot a production Fabric 1.21.10 client**
       `baritone/scripts/launch-production-client.ps1`, universal jar copied into the game
       directory's `mods/`, extraction cache deleted first. Require the main menu with no
@@ -129,9 +122,9 @@ The design's key point: a module that bundles a nested jar without using it pass
       style as the other four.
 - [ ] **Step 2: Update `CONTENT.md`**
       The README source states all known limitations; limitation 5 was never added there.
-- [ ] **Step 3: Update the Gradle plugin design spec**
-      The `nested` field and the manifest compatibility consequence belong next to the existing
-      "Metadata deliberately not generated" reasoning.
+- [ ] **Step 3: Leave the Gradle plugin design spec alone**
+      Nothing in the plugin changed. Recorded as a step so the next reader knows that was checked
+      rather than forgotten.
 - [ ] **Step 4: Update both handoffs**
       Nylium's limitation list and Baritone's "The Fabric modules crash the client" section, which
       becomes a fixed record rather than a blocker.

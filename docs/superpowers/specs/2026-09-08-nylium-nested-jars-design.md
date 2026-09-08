@@ -49,7 +49,46 @@ discovery.
   module is selected, so two modules bundling different versions of one library never meet. This
   falls out of the design rather than being solved by it.
 
-## Shape: the plugin discovers, the manifest declares, the kernel extracts
+## Corrected while executing: the kernel discovers, 2026-09-08
+
+**The section below is superseded and kept for its reasoning.** It proposed that the plugin discover
+nested jars, the manifest declare them and the kernel extract them. Task 1 falsified its central
+claim.
+
+The claim was that discovery is "a filter over data the plugin computes anyway". That is true of
+`ModuleJarInspector`, which runs inside `nyliumVerifyModules`, a task action. It is false of the
+manifest: `NyliumPlugin.writers` calls `ManifestRenderer.render(modules)` at **configuration** time
+and sets the result as a plain `@Input` String on `NyliumTextFileTask`. Module jars do not exist
+then; they are produced later by the consumer's `remapJar`. Declaring nested jars in the manifest
+therefore needs either a new task that re-declares every module field as a task input purely to
+render at execution time, or lazy-provider plumbing over N modules to carry the task dependencies.
+Both are a lot of machinery for a list the kernel can read directly.
+
+**So the kernel discovers.** After extracting the selected module, it reads that jar's direct
+`META-INF/jars/*.jar` entries, extracts each into the same cache and adds each to the classpath.
+The plugin does not change and the manifest wire format does not change.
+
+Re-examined, the three objections raised below against runtime discovery are weak:
+
+- *"It extracts whatever sits under that prefix rather than what the author declared."*
+  `META-INF/jars/` is by definition where Fabric's `include` puts a nested dependency. A jar there
+  is a nested dependency; extracting it is the correct reading, not a guess.
+- *"No build-time failure when something is wrong."* The failure it would catch, declared-but-absent,
+  exists only because of declaration. Automatic discovery cannot disagree with itself.
+- *"Fabric layout knowledge in a platform-agnostic kernel."* The kernel already resolves module
+  paths and mixin config names out of jars. "A jar bundled inside this jar" is a generic shape, and
+  the prefix is the only Fabric-specific token.
+
+Two further advantages, neither available to the declared design:
+
+- **No manifest compatibility consequence at all.** See "Manifest compatibility" below, which
+  described a real hazard of the superseded shape and no longer applies to anything.
+- **It fixes jars already built**, since nothing about the universal jar has to change.
+
+The cost is that a consumer cannot opt a nested jar out of extraction. Nothing needs that today, and
+if something ever does, the declared shape is the escape hatch to reach for.
+
+## Superseded shape: the plugin discovers, the manifest declares, the kernel extracts
 
 This mirrors how mixin configs already work, which is the strongest argument for it: a consumer
 declares them, the plugin validates them against the module jar's real contents at package time,
@@ -83,11 +122,12 @@ kernel that is otherwise platform-agnostic.
 
 ## Manifest compatibility
 
-`ModuleManifest` rejects unrecognised keys by design, so **a universal jar built by the new plugin
-cannot be read by an older kernel**: it would fail with `Unknown key 'module.0.nested'`. This is not
-a real break, because the plugin embeds the kernel it ships with into the same universal jar, so the
-two always travel together. It does mean a consumer must not pin an older `nylium-core` against a
-newer plugin. The failure is loud and names the key, which is the behaviour that field is there for.
+**No longer applies**, since the corrected design changes no wire format. Kept because the hazard is
+worth knowing before anyone adds a manifest field later: `ModuleManifest` rejects unrecognised keys
+by design, so a jar built by a plugin that emits a new field cannot be read by an older kernel,
+which would fail with `Unknown key 'module.0.<field>'`. The plugin embeds the kernel it ships with
+into the same universal jar, so the two normally travel together, but a consumer pinning an older
+`nylium-core` against a newer plugin would break. The failure is loud and names the key.
 
 ## Extraction and caching
 
