@@ -40,7 +40,8 @@ broke.
 1. `docs/superpowers/specs/2026-09-05-nylium-program-overview.md` - what Nylium is, the founding
    compatibility contract, the five sub-projects and their order.
 2. `docs/superpowers/specs/2026-09-05-nylium-kernel-design.md` - SP-1's design, amended repeatedly
-   during execution. **The three known limitations are recorded here with bytecode evidence.**
+   during execution. **Four of the five known limitations are recorded here with bytecode evidence**
+   (limitation 5 is in this handoff only, not yet in the spec).
 3. `docs/superpowers/plans/SPIKE-modlauncher9.md` - the ModLauncher 9 spike findings. Implement from
    this, never from memory; it corrected several wrong assumptions.
 4. `docs/superpowers/plans/2026-09-05-nylium-kernel-rulings.md` - all 72 decisions taken during
@@ -77,10 +78,11 @@ The Fabric pair is the load-bearing case: the same jar selecting a *different* m
 what proves dispatch rather than mere loading. `mixin=applied` comes from a real
 `@Mixin(targets="net.minecraft.server.Main")` whose injected callback ran.
 
-## Four known limitations, each needing its own spike
+## Five known limitations, each needing its own spike
 
-All four are documented in the kernel design spec with the bytecode analysis behind them. None is a
-silent bug; all are stated in `CONTENT.md` (the README source) too.
+The first four are documented in the kernel design spec with the bytecode analysis behind them, and
+stated in `CONTENT.md` (the README source) too. **Limitation 5 is recorded only here so far**: it
+still needs writing into the kernel design spec and `CONTENT.md`. None is a silent bug.
 
 1. **ModLauncher 8 dispatches but cannot reach Minecraft classes.** Its `ITransformationService` is
    discovered by a classloader that is a *sibling* of the one hosting the game, and its hook fires
@@ -97,8 +99,10 @@ silent bug; all are stated in `CONTENT.md` (the README source) too.
 3. **`Platform.environment()` cannot detect CLIENT on either ModLauncher backend.** Same classloader
    topology as (1). `IEnvironment.Keys.LAUNCHTARGET` is the right signal but is measured empty at
    `onLoad`, only populating at `initialize`/`beginScanning`. Fixing it needs kernel boot moved to a
-   later hook on two proven backends. CLIENT is unverified on *all* backends; no client smoke test
-   exists anywhere.
+   later hook on two proven backends. **Narrowed 2026-09-08:** the Fabric backend now has one real
+   client run behind it, booting Baritone's universal jar on Fabric 1.21.10, where dispatch worked
+   and Mixin reported `Detected Side : CLIENT`. So this limitation is now specifically about the two
+   ModLauncher backends. There is still no client smoke *test* anywhere, on any backend.
 4. **The LaunchWrapper backend dispatches correctly and then the server fails to launch.** Found
    2026-09-06 by the SP-2b conformance mod, measured on Forge 1.7.10. `NyliumBootTransformer`
    bootstraps Mixin from inside its own `transform()` call, and `MixinBootstrap.init()` registers a
@@ -115,6 +119,20 @@ silent bug; all are stated in `CONTENT.md` (the README source) too.
    bootstrapping Mixin earlier was tried and made the tweaker's own transformer registration fail
    bytecode verification. Needs its own spike; explicitly out of scope for SP-2b. See the kernel
    design spec for the full stack and reasoning.
+5. **Fabric jar-in-jar does not survive dispatch, so a module's `include`d dependencies are
+   unreachable.** Found 2026-09-08 by booting Baritone's universal jar on a real Fabric 1.21.10
+   client. Fabric Loader unpacks a jar's nested `META-INF/jars` during **mod discovery**, but the
+   kernel extracts a module and adds it to the classpath at **prelaunch**, after discovery is over,
+   and the generated outer `fabric.mod.json` carries no `jars` key of its own. The nested bytes ride
+   along inside the extracted module and are simply unreachable, because a jar nested in a jar is on
+   no classpath. Baritone dispatched, applied all 20 of its mixins and initialised, then the client
+   died with `NoClassDefFoundError: dev/babbaj/pathfinder/NetherPathfinder`. This is not exotic:
+   `include` is the idiomatic way a Fabric mod ships a dependency, so any such consumer hits it.
+   Candidate routes, neither implemented: hoist each module's `META-INF/jars` entries into the outer
+   `fabric.mod.json`'s `jars` array at package time, or have the kernel extract a module's nested
+   jars alongside it and add them to the classpath. Note this is Fabric-specific: Forge and NeoForge
+   consumers that shade their dependencies flat are unaffected, which is measured, not assumed.
+   **No server test can catch this class of bug** if the consumer's affected code is client-side.
 
 ## Plan defects, so you do not repeat them
 
@@ -272,8 +290,11 @@ Per the program overview's ordering:
   consumer's own class running. `baritone-forge-1.21.10` is unproven only because this harness has
   no Forge 1.21.10 server. Every selected module logged as a `.index`, so this is also the first
   end-to-end evidence of dedupe extraction under a real consumer.
-  **This proves dispatch, not that Baritone works.** All 21 of Baritone's mixins are `client`-only,
-  so a dedicated server applies none of them; that ceiling is limitation (3).
+  **This proves dispatch, not that Baritone works.** Baritone's mixins are all `client`-only (21
+  entries on 1.21.11, 20 on 1.21.10), so a dedicated server applies none of them.
+  **A real Fabric 1.21.10 client was then booted and it crashed**, which is where limitation 5
+  below came from: dispatch, mixin application and Baritone's own initialisation all worked, then
+  the client died on the `include`d `nether-pathfinder` jar that dispatch cannot reach.
 - **This smoke harness cannot verify an entrypoint-less consumer, found while booting Baritone.**
   Every test here asserts on a marker file written by a module's own entrypoint, and `entrypoint` is
   optional by design, so a mixins-only consumer can only ever fail the assertion however well it
