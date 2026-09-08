@@ -262,8 +262,26 @@ Per the program overview's ordering:
   and works purely through mixins), and a consumer project needs its OWN `repositories` block, since
   `nyliumEmbed` resolves `nylium-api`, `nylium-core` and the bootstraps as Maven coordinates. That
   is worth stating in the plugin's design doc; the current worked example does not show it.
-  **Nothing has been booted.** The jar is assembled and its manifest read back, but no server has
-  launched it, so this is not yet evidence that Baritone dispatches.
+  **Booted 2026-09-08 evening**, superseding this entry's earlier "nothing has been booted" note.
+  Three of the four modules dispatch on real servers, each booting to Minecraft's own `Done (` line
+  and then shutting down on a `stop` command with exit 0, rather than being force-killed: Fabric
+  1.21.11 and Fabric 1.21.10 select `baritone-fabric-1.21.11` and `baritone-fabric-1.21.10`
+  respectively (the discrimination pair, different content hashes from one jar), and Forge 1.21.11
+  selects `baritone-forge-1.21.11` and additionally logs
+  `Successfully loaded Mixin Connector [baritone.launch.BaritoneMixinConnector]`, which is a
+  consumer's own class running. `baritone-forge-1.21.10` is unproven only because this harness has
+  no Forge 1.21.10 server. Every selected module logged as a `.index`, so this is also the first
+  end-to-end evidence of dedupe extraction under a real consumer.
+  **This proves dispatch, not that Baritone works.** All 21 of Baritone's mixins are `client`-only,
+  so a dedicated server applies none of them; that ceiling is limitation (3).
+- **This smoke harness cannot verify an entrypoint-less consumer, found while booting Baritone.**
+  Every test here asserts on a marker file written by a module's own entrypoint, and `entrypoint` is
+  optional by design, so a mixins-only consumer can only ever fail the assertion however well it
+  dispatches. Baritone was verified by installing through `provisionFabricServers` /
+  `provisionForge12111` with `-PnyliumSmokeJar` and then booting by hand, reading the kernel's own
+  `[Nylium] booted ...` line and the extraction cache instead of a marker. If this harness is ever
+  meant to cover consumers rather than only Nylium's own two mods, it needs a success signal that
+  does not presume an entrypoint, and it must stop force-killing at the marker.
 - **SP-1b** NeoForge backend - NeoForge ships no ModLauncher at all and needs a fifth bootstrap over
   its own `IModFileCandidateLocator`, behind its own spike.
 - **SP-1c** (implied, not yet specced) the ModLauncher 8 visibility spike from limitation (1).
