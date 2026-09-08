@@ -26,7 +26,8 @@ public final class ConformanceEntry {
                 + "sharedClass=" + SharedConstant.value() + "\n"
                 + "uniqueClass=" + ModuleIdentity.unique() + "\n"
                 + "loader=" + LoaderProbe.detect() + "\n"
-                + "mcClass=" + McClassProbe.state() + "\n";
+                + "mcClass=" + McClassProbe.state() + "\n"
+                + "bundledJar=" + BundledJarProbe.state() + "\n";
         ReportWriter.write(Paths.get(target), report.getBytes(StandardCharsets.UTF_8));
     }
 }

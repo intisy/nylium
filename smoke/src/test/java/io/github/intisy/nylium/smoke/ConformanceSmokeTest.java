@@ -45,14 +45,20 @@ class ConformanceSmokeTest {
         return new ConformanceReport(ServerSmokeHarness.run(directory, command, report, timeout));
     }
 
+    /**
+     * @implNote {@code bundledJar} is asserted on every server, not only the one module that
+     *     bundles a jar at {@code META-INF/jars}, because "absent" everywhere else is what makes
+     *     the one "bundled" mean anything. Only fabric-1.21.10's module bundles one.
+     */
     private static void assertCommonKeys(ConformanceReport report, String module, String loader,
-                                         String mcClass) {
+                                         String mcClass, String bundledJar) {
         assertEquals(module, report.get("module"));
         assertEquals("invoked", report.get("entrypoint"));
         assertEquals("shared-ok", report.get("sharedClass"));
         assertEquals("unique-" + module, report.get("uniqueClass"));
         assertEquals(loader, report.get("loader"));
         assertEquals(mcClass, report.get("mcClass"));
+        assertEquals(bundledJar, report.get("bundledJar"));
     }
 
     private ConformanceReport bootFabric(String minecraftVersion) throws Exception {
@@ -67,12 +73,12 @@ class ConformanceSmokeTest {
 
     @Test
     void picksTheExactModuleOverTheBroadTheAlternateAndTheClientOne() throws Exception {
-        assertCommonKeys(bootFabric("1.21.11"), "fabric-1.21.11", "fabric", "reachable");
+        assertCommonKeys(bootFabric("1.21.11"), "fabric-1.21.11", "fabric", "reachable", "absent");
     }
 
     @Test
     void picksTheOtherExactModuleOnTheAdjacentVersion() throws Exception {
-        assertCommonKeys(bootFabric("1.21.10"), "fabric-1.21.10", "fabric", "reachable");
+        assertCommonKeys(bootFabric("1.21.10"), "fabric-1.21.10", "fabric", "reachable", "bundled");
     }
 
     /**
@@ -95,7 +101,7 @@ class ConformanceSmokeTest {
                 javaExecutable(8),
                 "-Dnylium.smoke.report=" + report.toAbsolutePath(),
                 "-jar", "forge-server.jar",
-                "nogui"), Duration.ofMinutes(3)), "launchwrapper", "launchwrapper", "unsafe-to-probe");
+                "nogui"), Duration.ofMinutes(3)), "launchwrapper", "launchwrapper", "unsafe-to-probe", "absent");
     }
 
     /**
@@ -112,7 +118,7 @@ class ConformanceSmokeTest {
                 javaExecutable(8),
                 "-Dnylium.smoke.report=" + report.toAbsolutePath(),
                 "-jar", "forge-server.jar",
-                "nogui"), Duration.ofMinutes(4)), "modlauncher8", "modlauncher8", "unavailable");
+                "nogui"), Duration.ofMinutes(4)), "modlauncher8", "modlauncher8", "unavailable", "absent");
     }
 
     @Test
@@ -141,7 +147,7 @@ class ConformanceSmokeTest {
                     + ServerSmokeHarness.log(directory));
         }
         assertCommonKeys(new ConformanceReport(new String(Files.readAllBytes(report),
-                StandardCharsets.UTF_8)), "modlauncher9", "modlauncher9", "reachable");
+                StandardCharsets.UTF_8)), "modlauncher9", "modlauncher9", "reachable", "absent");
     }
 
     /**

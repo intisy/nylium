@@ -41,6 +41,25 @@ sourceSets.create('identityStub') {
 
 sourceSets.main.compileClasspath += files(sourceSets.identityStub.output)
 
+/**
+ * @implNote Stands in for Loom's `include`. This project has no Fabric tooling, so the nesting is
+ * done by hand: the library is jarred separately and copied into ONE module jar under
+ * META-INF/jars, never flattened into it, which is the layout the kernel has to cope with. Only
+ * fabric-1.21.10 bundles it, so every other module reports bundledJar=absent and the pair
+ * discriminates.
+ */
+sourceSets.create('bundledLibrary') {
+    java {
+        srcDirs = ['src/bundledLibrary/java']
+    }
+}
+
+def bundledLibraryJar = tasks.register('bundledLibraryJar', Jar) {
+    archiveFileName = 'conformance-bundled-library.jar'
+    destinationDirectory = layout.buildDirectory.dir('modules')
+    from sourceSets.bundledLibrary.output
+}
+
 def moduleIds = ['fabric-1.21.11', 'fabric-1.21.11-alt', 'fabric-1.21.11-client',
                  'fabric-1.21.10', 'fabric-broad', 'launchwrapper', 'modlauncher8', 'modlauncher9']
 
@@ -58,6 +77,11 @@ moduleIds.each { id ->
         destinationDirectory = layout.buildDirectory.dir('modules')
         from sourceSets.main.output
         from sourceSets."module${safe(id)}".output
+        if (id == 'fabric-1.21.10') {
+            from(bundledLibraryJar) {
+                into 'META-INF/jars'
+            }
+        }
         if (id == 'modlauncher9') {
             from(resources.text.fromString('''
 {
