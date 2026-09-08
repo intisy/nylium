@@ -32,16 +32,16 @@ broke.
   the published `io.github.intisy.nylium` plugin the same way any real external consumer would,
   which is stronger evidence than testing the plugin against a subproject of its own build. It
   exercises all four platforms, an adjacent-Fabric discrimination pair, an exact-versus-ranged
-  version constraint, a priority tie, a `CLIENT`-versus-`SERVER` module, and a ModLauncher 9 mixin,
-  across 8 declared modules.
+  version constraint, a priority tie, a `CLIENT`-versus-`SERVER` module, a ModLauncher 9 mixin, and
+  a dependency bundled at `META-INF/jars` in one module only, across 8 declared modules.
 
 ## Read these, in this order
 
 1. `docs/superpowers/specs/2026-09-05-nylium-program-overview.md` - what Nylium is, the founding
    compatibility contract, the five sub-projects and their order.
 2. `docs/superpowers/specs/2026-09-05-nylium-kernel-design.md` - SP-1's design, amended repeatedly
-   during execution. **Four of the five known limitations are recorded here with bytecode evidence**
-   (limitation 5 is in this handoff only, not yet in the spec).
+   during execution. **All five known limitations are recorded here with bytecode evidence**, the
+   four open ones and the fixed fifth.
 3. `docs/superpowers/plans/SPIKE-modlauncher9.md` - the ModLauncher 9 spike findings. Implement from
    this, never from memory; it corrected several wrong assumptions.
 4. `docs/superpowers/plans/2026-09-05-nylium-kernel-rulings.md` - all 72 decisions taken during
@@ -78,11 +78,12 @@ The Fabric pair is the load-bearing case: the same jar selecting a *different* m
 what proves dispatch rather than mere loading. `mixin=applied` comes from a real
 `@Mixin(targets="net.minecraft.server.Main")` whose injected callback ran.
 
-## Five known limitations, each needing its own spike
+## Five known limitations, four still open
 
-The first four are documented in the kernel design spec with the bytecode analysis behind them, and
-stated in `CONTENT.md` (the README source) too. **Limitation 5 is recorded only here so far**: it
-still needs writing into the kernel design spec and `CONTENT.md`. None is a silent bug.
+The first four are open and each needs its own spike. The fifth is FIXED. All five are documented in
+the kernel design spec with the bytecode analysis behind them, and the four open ones are stated in
+`CONTENT.md` (the README source) too, where the fixed one appears instead as documented behaviour
+under "Dependencies your module bundles with `include`". None is a silent bug.
 
 1. **ModLauncher 8 dispatches but cannot reach Minecraft classes.** Its `ITransformationService` is
    discovered by a classloader that is a *sibling* of the one hosting the game, and its hook fires
@@ -119,20 +120,28 @@ still needs writing into the kernel design spec and `CONTENT.md`. None is a sile
    bootstrapping Mixin earlier was tried and made the tweaker's own transformer registration fail
    bytecode verification. Needs its own spike; explicitly out of scope for SP-2b. See the kernel
    design spec for the full stack and reasoning.
-5. **Fabric jar-in-jar does not survive dispatch, so a module's `include`d dependencies are
-   unreachable.** Found 2026-09-08 by booting Baritone's universal jar on a real Fabric 1.21.10
-   client. Fabric Loader unpacks a jar's nested `META-INF/jars` during **mod discovery**, but the
-   kernel extracts a module and adds it to the classpath at **prelaunch**, after discovery is over,
-   and the generated outer `fabric.mod.json` carries no `jars` key of its own. The nested bytes ride
-   along inside the extracted module and are simply unreachable, because a jar nested in a jar is on
-   no classpath. Baritone dispatched, applied all 20 of its mixins and initialised, then the client
-   died with `NoClassDefFoundError: dev/babbaj/pathfinder/NetherPathfinder`. This is not exotic:
-   `include` is the idiomatic way a Fabric mod ships a dependency, so any such consumer hits it.
-   Candidate routes, neither implemented: hoist each module's `META-INF/jars` entries into the outer
-   `fabric.mod.json`'s `jars` array at package time, or have the kernel extract a module's nested
-   jars alongside it and add them to the classpath. Note this is Fabric-specific: Forge and NeoForge
-   consumers that shade their dependencies flat are unaffected, which is measured, not assumed.
-   **No server test can catch this class of bug** if the consumer's affected code is client-side.
+5. **FIXED 2026-09-08, same day it was found. Fabric jar-in-jar did not survive dispatch, so a
+   module's `include`d dependencies were unreachable.** Found by booting Baritone's universal jar
+   on a real Fabric 1.21.10 client. Fabric Loader unpacks a jar's nested `META-INF/jars` during
+   **mod discovery**, but the kernel extracts a module and adds it to the classpath at
+   **prelaunch**, after discovery is over, and the generated outer `fabric.mod.json` carries no
+   `jars` key of its own, so the nested bytes rode along inside the extracted module and were
+   unreachable. Baritone dispatched, applied all 20 of its mixins and initialised, then the client
+   died with `NoClassDefFoundError: dev/babbaj/pathfinder/NetherPathfinder`.
+   The kernel now lists a module's direct `META-INF/jars/*.jar` entries after extracting it,
+   extracts each into the same content-addressed cache and classpaths them before
+   `whenModuleLoadable` fires. Discovery is at runtime, not declared in the manifest, and nothing in
+   the wire format changed;
+   `docs/superpowers/specs/2026-09-08-nylium-nested-jars-design.md` records why the first design
+   (plugin declares, manifest carries it) was withdrawn while being executed. Verified three ways:
+   the conformance mod's fabric-1.21.10 module now bundles a library and reports
+   `bundledJar=bundled` where every other server reports `absent` (and that assertion was confirmed
+   to fail with the fix reverted), Baritone's client reaches the main menu and stays up, and the
+   log shows `[nether-pathfinder] Loaded shared library`, so the native loads and not merely the
+   class. Forge and NeoForge consumers that shade flat were never affected, and the fix is inert for
+   them: the Forge server's cache holds only its module.
+   **No server test could have caught this** when the consumer's affected code is client-side,
+   which is the second time in this project a limitation was found only by widening what gets run.
 
 ## Plan defects, so you do not repeat them
 
@@ -294,7 +303,12 @@ Per the program overview's ordering:
   entries on 1.21.11, 20 on 1.21.10), so a dedicated server applies none of them.
   **A real Fabric 1.21.10 client was then booted and it crashed**, which is where limitation 5
   below came from: dispatch, mixin application and Baritone's own initialisation all worked, then
-  the client died on the `include`d `nether-pathfinder` jar that dispatch cannot reach.
+  the client died on the `include`d `nether-pathfinder` jar that dispatch could not reach.
+  **That is fixed, and the same client now reaches the main menu and stays up**, with
+  `[nether-pathfinder] Loaded shared library` in its log. All three Baritone server boots were
+  re-run afterwards and stayed green. Baritone is therefore the first consumer whose own code has
+  been seen running from a universal jar, though still only up to the main menu: no world has been
+  loaded and no Baritone command has ever been issued.
 - **This smoke harness cannot verify an entrypoint-less consumer, found while booting Baritone.**
   Every test here asserts on a marker file written by a module's own entrypoint, and `entrypoint` is
   optional by design, so a mixins-only consumer can only ever fail the assertion however well it

@@ -288,6 +288,47 @@ was already tried and failed for a different reason. This needs its own spike, o
 as the ModLauncher 9 and ModLauncher 8 spikes above, and is explicitly out of scope for SP-2b; see
 `2026-09-06-nylium-content-addressed-dedupe-design.md` for where it surfaced.
 
+**A module's own nested jars were unreachable after dispatch. Recorded and FIXED 2026-09-08, found
+by booting Baritone's universal jar on a real Fabric 1.21.10 client.** This was a fifth limitation,
+and like the fourth it crashed the game rather than merely capping what a module could do.
+
+Fabric's `include` nests a dependency at `META-INF/jars/` inside the mod jar and names it in that
+jar's own `fabric.mod.json` `jars` array, and Fabric Loader unpacks those during **mod discovery**.
+The kernel extracts a module and adds it to the classpath at **prelaunch**, after discovery is over,
+and the generated outer `fabric.mod.json` carries no `jars` key of its own. So the dependency's
+bytes rode along inside the extracted module and were unreachable, because a jar nested inside a jar
+is on no classpath. The decisive frames, from Baritone:
+
+```
+java.lang.NoClassDefFoundError: dev/babbaj/pathfinder/NetherPathfinder
+    at baritone.process.elytra.NetherPathfinderContext.isSupported(NetherPathfinderContext.java:241)
+    at baritone.process.ElytraProcess.create(ElytraProcess.java:90)
+    at baritone.Baritone.registerProcess(Baritone.java:145)
+    at baritone.api.BaritoneAPI.<clinit>(BaritoneAPI.java:38)
+    at net.minecraft.class_310.handler$zzh000$postInit(class_310.java:3123)
+Caused by: java.lang.ClassNotFoundException: dev.babbaj.pathfinder.NetherPathfinder
+```
+
+Everything before that worked: dispatch selected the right module, Mixin reported
+`Detected Side : CLIENT`, all 20 of Baritone's mixins applied against intermediary names, and
+Baritone initialised far enough to print to chat. The crash came from Baritone's own mixin calling
+into a dependency the classpath could not see.
+
+**The fix is in `ModuleExtractor` and `NyliumKernel`.** After extracting the selected module, the
+kernel lists that jar's direct `META-INF/jars/*.jar` entries, extracts each into the same
+content-addressed cache and adds each to the classpath, all before `whenModuleLoadable` fires so the
+classes exist before any mixin or entrypoint runs. Discovery is at runtime rather than declared in
+the manifest, and
+`docs/superpowers/specs/2026-09-08-nylium-nested-jars-design.md` records why: the manifest is
+rendered at configuration time, before a consumer's module jars exist, so the plugin cannot declare
+what it cannot yet read. Nothing in the wire format changed as a result.
+
+**No server test could have caught this** when the consumer's affected code is client-side. All of
+Baritone's mixins are client-only, so on a dedicated server `BaritoneAPI` never initialises and the
+missing class is never touched; three green server boots preceded the discovery. This is the second
+limitation in this project found only by widening what gets run rather than by reading code, after
+the fourth.
+
 **Verification status of the ModLauncher 9+ range.** Forge 1.21.x is verified against a real server
 (1.21.11-61.1.5). Forge 1.17 - 1.20.x is source-compatible and confirmed to compile at release 8,
 but was never run. Its `initializeLaunch` carries only the two-argument form, which is precisely

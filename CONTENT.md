@@ -292,6 +292,22 @@ Both look like omissions on first read; neither is.
   the point of a universal jar. Set `mod { minecraftDependency = '...' }` explicitly if your mod
   genuinely needs a floor.
 
+### Dependencies your module bundles with `include`
+
+If a module jar nests a dependency at `META-INF/jars`, which is what Loom's and unimined's
+`include` produces, the kernel extracts it alongside the module and puts it on the classpath. This
+is handled for you and needs no declaration.
+
+It has to be done by the kernel because Fabric Loader unpacks nested jars during **mod discovery**,
+which is finished before a module is ever dispatched, and the generated outer `fabric.mod.json`
+names no nested jars of its own. Without this, a bundled dependency's bytes travel inside the
+module and are unreachable, since a jar nested inside a jar is on no classpath. Consumers that
+instead shade their dependencies flat, as a Forge or NeoForge mod typically does, are unaffected
+either way.
+
+The limit worth knowing: this makes a nested **library** reachable. A nested jar that is itself a
+mod, with its own entrypoints, is not registered as one.
+
 ### Validation
 
 The plugin fails the build rather than shipping a jar that cannot dispatch.
@@ -334,7 +350,8 @@ runs, telling you to declare a module.
 
 ## Known limitations
 
-This is a working kernel with three documented gaps, not a finished product:
+This is a working kernel with four documented gaps, not a finished product. All four are capability
+or deployment gaps in a specific backend; none of them affects Fabric:
 
 - **ModLauncher 8: dispatch works, but a module cannot see Minecraft classes.** Dispatch is
   verified on a real Forge 1.16.5 server: the correct module is selected, classpathed and its
