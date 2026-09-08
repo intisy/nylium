@@ -271,9 +271,15 @@ Per the program overview's ordering:
 - **SP-2b content-addressed dedupe: DONE.** See "Candidate 1 is implemented" above. Proven on the
   conformance mod's own jar and on Baritone's real bytecode (Task 10 measurement, recorded in the
   design spec).
-- **SP-3 Baritone universal jar: ASSEMBLED 2026-09-08, not yet run.** Its blocker is gone. Baritone's
-  loaders are now Stonecutter dimensions, so one `./gradlew build` produces seven remapped loader
-  jars across 1.21.10 and 1.21.11, and `:universal` turns four of them into a Nylium universal jar.
+- **SP-3 Baritone universal jar: ASSEMBLED and BOOTED 2026-09-08.** Its blocker is gone. Baritone's
+  loaders are now Stonecutter dimensions, and by the end of that day it carried **four Minecraft
+  versions (1.21.5, 1.21.8, 1.21.10, 1.21.11) in eight modules**, 5,418,209 bytes over 1128 blobs.
+  Two findings there are Nylium's business rather than Baritone's. First, a **982 KB duplicate**: the
+  same `nether-pathfinder-1.4.1.jar` is stored twice because one module's copy carries a DOS
+  timestamp an hour off the others, so content-addressed dedupe misses on the largest artifact in
+  the jar; if the plugin normalised timestamps inside nested jars before hashing, that would go away
+  for every consumer. Second, the marginal cost of a version is very uneven: the third version added
+  8 percent of its own size, the fourth 31 percent.
   See the Baritone repo's `docs/superpowers/HANDOFF.md` and
   `docs/superpowers/specs/2026-09-08-loader-stonecutter-nodes-design.md`.
   **Baritone is therefore the second real consumer**, which is what the "Pending decisions" item
