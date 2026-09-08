@@ -28,8 +28,12 @@ public final class NyliumKernel {
         final ModuleDescriptor module =
                 new ModuleSelector(manifest).select(platform.id(), version, platform.environment());
 
-        Path extracted = new ModuleExtractor(cacheDirectory).extract(source, module);
+        ModuleExtractor extractor = new ModuleExtractor(cacheDirectory);
+        Path extracted = extractor.extract(source, module);
         platform.addToClasspath(extracted);
+        for (String nested : extractor.nestedJarEntries(extracted)) {
+            platform.addToClasspath(extractor.extractNested(extracted, nested));
+        }
         platform.whenModuleLoadable(new Runnable() {
             @Override
             public void run() {

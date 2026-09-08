@@ -13,12 +13,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.JarEntry;
 import java.util.jar.JarInputStream;
 import java.util.jar.JarOutputStream;
 
+import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -227,5 +229,93 @@ class ModuleExtractorTest {
 
             assertTrue(thrown.getMessage().contains("one.txt"), thrown.getMessage());
         }
+    }
+
+    private static Path jarOnDisk(Path dir, Map<String, byte[]> entries) throws Exception {
+        Files.createDirectories(dir);
+        Path jar = dir.resolve("module.jar");
+        try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+            for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+                out.putNextEntry(new JarEntry(entry.getKey()));
+                out.write(entry.getValue());
+                out.closeEntry();
+            }
+        }
+        return jar;
+    }
+
+    private static Map<String, byte[]> moduleBundling(String entry, byte[] payload) {
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put("some/Class.class", new byte[]{1, 2, 3});
+        entries.put(entry, payload);
+        return entries;
+    }
+
+    @Test
+    void listsAJarBundledUnderMetaInfJars(@TempDir Path dir) throws Exception {
+        Path module = jarOnDisk(dir, moduleBundling("META-INF/jars/library-1.0.jar", tinyJar()));
+        ModuleExtractor extractor = new ModuleExtractor(dir.resolve("cache"));
+
+        assertEquals(singletonList("META-INF/jars/library-1.0.jar"),
+                extractor.nestedJarEntries(module));
+    }
+
+    @Test
+    void listsNothingWhenTheModuleBundlesNoJar(@TempDir Path dir) throws Exception {
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put("some/Class.class", new byte[]{1, 2, 3});
+        entries.put("META-INF/jars/notes.txt", "ignored".getBytes(StandardCharsets.UTF_8));
+        Path module = jarOnDisk(dir, entries);
+        ModuleExtractor extractor = new ModuleExtractor(dir.resolve("cache"));
+
+        assertTrue(extractor.nestedJarEntries(module).isEmpty());
+    }
+
+    @Test
+    void extractsABundledJarWithItsOwnBytes(@TempDir Path dir) throws Exception {
+        byte[] payload = tinyJar();
+        Path module = jarOnDisk(dir, moduleBundling("META-INF/jars/library-1.0.jar", payload));
+        ModuleExtractor extractor = new ModuleExtractor(dir.resolve("cache"));
+
+        Path extracted = extractor.extractNested(module, "META-INF/jars/library-1.0.jar");
+
+        assertArrayEquals(payload, Files.readAllBytes(extracted));
+        assertTrue(extracted.getFileName().toString().startsWith("library-1.0-"),
+                extracted.getFileName().toString());
+    }
+
+    @Test
+    void reusesAnAlreadyExtractedBundledJar(@TempDir Path dir) throws Exception {
+        Path module = jarOnDisk(dir, moduleBundling("META-INF/jars/library-1.0.jar", tinyJar()));
+        ModuleExtractor extractor = new ModuleExtractor(dir.resolve("cache"));
+
+        Path first = extractor.extractNested(module, "META-INF/jars/library-1.0.jar");
+        Files.write(first, "clobbered".getBytes(StandardCharsets.UTF_8));
+        Path second = extractor.extractNested(module, "META-INF/jars/library-1.0.jar");
+
+        assertEquals(first, second);
+        assertEquals("clobbered", new String(Files.readAllBytes(second), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void aJarBundledBelowMetaInfJarsFailsClearly(@TempDir Path dir) throws Exception {
+        Path module = jarOnDisk(dir, moduleBundling("META-INF/jars/deeper/library.jar", tinyJar()));
+        ModuleExtractor extractor = new ModuleExtractor(dir.resolve("cache"));
+
+        NyliumException thrown = assertThrows(NyliumException.class,
+                () -> extractor.nestedJarEntries(module));
+
+        assertTrue(thrown.getMessage().contains("deeper/library.jar"), thrown.getMessage());
+    }
+
+    @Test
+    void aBundledJarWithNoUsableNameFailsClearly(@TempDir Path dir) throws Exception {
+        Path module = jarOnDisk(dir, moduleBundling("META-INF/jars/...jar", tinyJar()));
+        ModuleExtractor extractor = new ModuleExtractor(dir.resolve("cache"));
+
+        NyliumException thrown = assertThrows(NyliumException.class,
+                () -> extractor.extractNested(module, "META-INF/jars/...jar"));
+
+        assertTrue(thrown.getMessage().contains("no usable filename"), thrown.getMessage());
     }
 }
